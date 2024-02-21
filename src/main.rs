@@ -6,7 +6,7 @@ use std::time::Duration;
 
 fn main() {
     let port_name = "COM8"; // Adjust this to match your system
-    let baud_rate = 57600;
+    let baud_rate = 9600;
 
     let mut port = serialport::new(port_name, baud_rate)
         .timeout(Duration::from_millis(10))

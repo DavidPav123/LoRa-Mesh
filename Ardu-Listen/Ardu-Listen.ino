@@ -9,9 +9,9 @@ SoftwareSerial LoRaSerial(rxPin, txPin);
 
 void setup() {
   // Open serial communications and wait for port to open:
-  Serial.begin(57600);
+  Serial.begin(9600);
   // Set up the software serial port for the LoRa module
-  LoRaSerial.begin(57600);
+  LoRaSerial.begin(9600);
 
   Serial.println("Serial communication with LoRa module started. Type AT commands:");
 }
