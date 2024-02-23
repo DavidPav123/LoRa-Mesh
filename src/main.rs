@@ -25,7 +25,7 @@ fn main() {
     loop {
         if let Ok(input) = rx.try_recv() {
             // Calculate the length of the input minus the return and new linecharacters
-            let length = input.len() - 2;
+            let length = input.trim().len();
 
             // Construct the command string
             let command = format!("AT+SEND=0,{},{}", length, input);
@@ -54,7 +54,7 @@ fn main() {
             Err(_e) => println!("Error reading from serial port."),
         }
 
-        // Add a small delay to prevent the loop from consuming too much CPU time
+        // Delay to prevent the loop from consuming CPU time
         thread::sleep(Duration::from_millis(10));
     }
 }
