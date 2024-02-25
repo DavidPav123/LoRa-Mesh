@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
-    let port_name = "/dev/ttyACM0"; // Adjust this to match your system
+    let port_name = "COM8"; // Adjust this to match your system
     let baud_rate = 9600;
 
     let mut port = serialport::new(port_name, baud_rate)
@@ -28,7 +28,7 @@ fn main() {
             let length = input.trim().len();
 
             // Construct the command string
-            let command = format!("AT+SEND=0,{},{}", length, input);
+            let command = format!("AT+SEND=0,{},{}\r\n", length, input.trim());
 
             // Send the constructed command as bytes through the serial port
             port.write(command.as_bytes())
