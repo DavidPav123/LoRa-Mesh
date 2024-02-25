@@ -23,6 +23,19 @@ fn main() {
     });
 
     loop {
+        if let Ok(input) = rx.try_recv() {
+            // Calculate the length of the input minus the return and new linecharacters
+            let length = input.trim().len();
+
+            // Construct the command string
+            let command = format!("AT+SEND=0,{},{}", length, input);
+
+            // Send the constructed command as bytes through the serial port
+            port.write(command.as_bytes())
+                .expect("Failed to write to serial port");
+            println!("Command sent: {}", command);
+        }
+
         // Handling received data
         let mut serial_buf: Vec<u8> = vec![0; 240];
         match port.read(serial_buf.as_mut_slice()) {
