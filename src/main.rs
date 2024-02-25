@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
-    let port_name = "COM8"; // Adjust this to match your system
+    let port_name = "/dev/ttyACM0"; // Adjust this to match your system
     let baud_rate = 9600;
 
     let mut port = serialport::new(port_name, baud_rate)
@@ -23,19 +23,6 @@ fn main() {
     });
 
     loop {
-        if let Ok(input) = rx.try_recv() {
-            // Calculate the length of the input minus the return and new linecharacters
-            let length = input.trim().len();
-
-            // Construct the command string
-            let command = format!("AT+SEND=0,{},{}", length, input);
-
-            // Send the constructed command as bytes through the serial port
-            port.write(command.as_bytes())
-                .expect("Failed to write to serial port");
-            println!("Command sent: {}", command);
-        }
-
         // Handling received data
         let mut serial_buf: Vec<u8> = vec![0; 240];
         match port.read(serial_buf.as_mut_slice()) {
@@ -55,6 +42,6 @@ fn main() {
         }
 
         // Delay to prevent the loop from consuming CPU time
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(250));
     }
 }
