@@ -1,3 +1,4 @@
+use eframe::egui;
 use serialport::{self, SerialPort};
 use std::io;
 use std::sync::mpsc;
@@ -46,6 +47,14 @@ fn main() {
         }
     });
 
+    egui::CentralPanel::default().show(&ctx, |ui| {
+        ui.add(egui::Label::new("Hello World!"));
+        ui.label("A shorter and more convenient way to add a label.");
+        if ui.button("Click me").clicked() {
+            // take some action here
+        }
+    });
+    
     loop {
         if let Ok(input) = rx.try_recv() {
             send_command(&mut *port, &input);
