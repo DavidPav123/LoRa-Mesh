@@ -1,4 +1,3 @@
-use eframe::egui;
 use serialport::{self, SerialPort};
 use std::io;
 use std::sync::mpsc;
@@ -44,14 +43,6 @@ fn main() {
         let mut input = String::new();
         if io::stdin().read_line(&mut input).is_ok() {
             tx.send(input).expect("Failed to send data to the main thread");
-        }
-    });
-
-    egui::CentralPanel::default().show(&ctx, |ui| {
-        ui.add(egui::Label::new("Hello World!"));
-        ui.label("A shorter and more convenient way to add a label.");
-        if ui.button("Click me").clicked() {
-            // take some action here
         }
     });
     
