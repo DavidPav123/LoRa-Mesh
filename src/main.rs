@@ -1,58 +1,45 @@
-use serialport::{self, SerialPort};
-use std::io;
-use std::sync::mpsc;
-use std::thread;
-use std::time::Duration;
+#![warn(clippy::all, rust_2018_idioms)]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-fn send_command(port: &mut dyn SerialPort, input: &str) {
-    let length = input.trim().len();
-    let command = format!("AT+SEND=0,{},{}\r\n", length, input.trim());
-    port.write(command.as_bytes())
-        .expect("Failed to write to serial port");
-    println!("Command sent: {}", command);
+// When compiling natively:
+#[cfg(not(target_arch = "wasm32"))]
+fn main() -> eframe::Result<()> {
+    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([400.0, 300.0])
+            .with_min_inner_size([300.0, 220.0])
+            .with_icon(
+                // NOE: Adding an icon is optional
+                eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon-256.png")[..])
+                    .unwrap(),
+            ),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "lora_mesh",
+        native_options,
+        Box::new(|cc| Box::new(lora_mesh::TemplateApp::new(cc))),
+    )
 }
 
-fn receive_data(port: &mut dyn SerialPort) {
-    let mut serial_buf: Vec<u8> = vec![0; 240];
-    match port.read(serial_buf.as_mut_slice()) {
-        Ok(t) => {
-            let received_str = String::from_utf8_lossy(&serial_buf[..t]);
-            if let Some(start) = received_str.find("+RCV=") {
-                let data_parts: Vec<&str> = received_str[start..].split(',').collect();
-                if data_parts.len() > 2 {
-                    println!("Message Received: {}", data_parts[2]);
-                }
-            }
-        }
-        Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
-        Err(_e) => println!("Error reading from serial port."),
-    }
-}
-
+// When compiling to web using trunk:
+#[cfg(target_arch = "wasm32")]
 fn main() {
-    let port_name = "COM8";
-    let baud_rate = 9600;
+    // Redirect `log` message to `console.log` and friends:
+    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
 
-    let mut port = serialport::new(port_name, baud_rate)
-        .timeout(Duration::from_millis(10))
-        .open()
-        .expect("Failed to open port");
+    let web_options = eframe::WebOptions::default();
 
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || loop {
-        let mut input = String::new();
-        if io::stdin().read_line(&mut input).is_ok() {
-            tx.send(input).expect("Failed to send data to the main thread");
-        }
+    wasm_bindgen_futures::spawn_local(async {
+        eframe::WebRunner::new()
+            .start(
+                "the_canvas_id", // hardcode it
+                web_options,
+                Box::new(|cc| Box::new(eframe_template::TemplateApp::new(cc))),
+            )
+            .await
+            .expect("failed to start eframe");
     });
-    
-    loop {
-        if let Ok(input) = rx.try_recv() {
-            send_command(&mut *port, &input);
-        }
-
-        receive_data(&mut *port);
-
-        thread::sleep(Duration::from_millis(250));
-    }
 }
