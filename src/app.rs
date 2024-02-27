@@ -1,6 +1,7 @@
 use serialport::{self, SerialPort};
+use std::error::Error;
 use std::io;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 use std::vec;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -10,28 +11,54 @@ pub struct TemplateApp {
     // Example stuff:
     label: String,
     messages: Vec<String>,
+    #[serde(skip)]
+    shared_messages: Arc<Mutex<Vec<String>>>,
+    #[serde(skip)]
+    serial_port: Option<Arc<Mutex<Box<dyn SerialPort>>>>,
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
         Self {
-            // Example stuff:
-            label: "".to_owned(),
-            messages: vec!["First Message".to_string(), "Second Message".to_string()],
+            label: String::new(),
+            messages: Vec::new(),
+            serial_port: None,
+            shared_messages: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
 
 impl TemplateApp {
-    /// Called once before the first frame.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // This is also where you can customize the look and feel of egui using
-        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
+    fn send_message(&self, input: &str) {
+        let command = format!("AT+SEND=0,{},{}\r\n", input.trim().len(), input.trim());
 
-        // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
+        // Lock the serial port for safe access
+        let mut port = match self.serial_port.as_ref().expect("Something").lock() {
+            Ok(port) => port,
+            Err(_) => {
+                eprintln!("Failed to lock the serial port");
+                return;
+            }
+        };
+
+        if let Err(e) = port.write(command.as_bytes()) {
+            eprintln!("Failed to write to serial port: {}", e);
+        }
+    }
+
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        shared_messages: Arc<Mutex<Vec<String>>>,
+        serial_port: Box<dyn SerialPort>,
+    ) -> Self {
+        let serial_port = Arc::new(Mutex::new(serial_port));
         if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            // Update the app with the shared messages after loading
+            app.shared_messages = shared_messages;
+            app.serial_port = Some(serial_port);
+
+            return app;
         }
 
         Default::default()
@@ -69,12 +96,14 @@ impl eframe::App for TemplateApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            // Check for new data from the serial port
+
             // Create a scroll area that automatically takes up all available space
             egui::ScrollArea::vertical().show(ui, |ui| {
                 // Example long content to demonstrate scrolling
                 for i in &self.messages {
                     ui.horizontal(|ui| {
-                        ui.label(format!("Message: {}", i));
+                        ui.label(format!("Message Sent: {}", i));
                         // This spacer pushes everything to the left, showing the scroll area's full width
                         ui.add_space(ui.available_width());
                     });
@@ -87,6 +116,7 @@ impl eframe::App for TemplateApp {
                     if ui.button("Send").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter))
                     {
                         self.messages.push(self.label.clone());
+                        self.send_message(&self.label.clone());
                     }
                 });
             });
@@ -94,15 +124,7 @@ impl eframe::App for TemplateApp {
     }
 }
 
-fn send_message(port: &mut dyn SerialPort, input: &str) {
-    let length = input.trim().len();
-    let command = format!("AT+SEND=0,{},{}\r\n", length, input.trim());
-    port.write(command.as_bytes())
-        .expect("Failed to write to serial port");
-    println!("Command sent: {}", command);
-}
-
-fn receive_data(port: &mut dyn SerialPort) {
+fn receive_data(port: &mut dyn SerialPort) -> Result<String, Box<dyn Error>> {
     let mut serial_buf: Vec<u8> = vec![0; 240];
     match port.read(serial_buf.as_mut_slice()) {
         Ok(t) => {
@@ -110,17 +132,23 @@ fn receive_data(port: &mut dyn SerialPort) {
             if let Some(start) = received_str.find("+RCV=") {
                 let data_parts: Vec<&str> = received_str[start..].split(',').collect();
                 if data_parts.len() > 2 {
-                    println!("Message Received: {}", data_parts[2]);
+                    Ok(data_parts[2].to_string())
+                } else {
+                    Err(Box::new(io::Error::new(
+                        io::ErrorKind::Other,
+                        "No data found",
+                    )))
                 }
+            } else {
+                Err(Box::new(io::Error::new(
+                    io::ErrorKind::Other,
+                    "No data found",
+                )))
             }
         }
-        Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
-        Err(_e) => println!("Error reading from serial port."),
+        Err(_) => Err(Box::new(serialport::Error::new(
+            serialport::ErrorKind::NoDevice,
+            "Couldn't read from serial port",
+        ))),
     }
-}
-
-fn open_serial_port(port_name: &str, baud_rate: u32) -> serialport::Result<Box<dyn SerialPort>> {
-    serialport::new(port_name, baud_rate)
-        .timeout(Duration::from_millis(10))
-        .open()
 }
