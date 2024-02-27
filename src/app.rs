@@ -1,8 +1,5 @@
 use serialport::{self, SerialPort};
-use std::error::Error;
-use std::io;
 use std::sync::{Arc, Mutex};
-use std::vec;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -49,9 +46,9 @@ impl TemplateApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         shared_messages: Arc<Mutex<Vec<String>>>,
-        serial_port: Box<dyn SerialPort>,
+        serial_port: Arc<Mutex<Box<dyn SerialPort>>>,
     ) -> Self {
-        let serial_port = Arc::new(Mutex::new(serial_port));
+        let serial_port = serial_port.clone();
         if let Some(storage) = cc.storage {
             let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
             // Update the app with the shared messages after loading
@@ -121,34 +118,5 @@ impl eframe::App for TemplateApp {
                 });
             });
         });
-    }
-}
-
-fn receive_data(port: &mut dyn SerialPort) -> Result<String, Box<dyn Error>> {
-    let mut serial_buf: Vec<u8> = vec![0; 240];
-    match port.read(serial_buf.as_mut_slice()) {
-        Ok(t) => {
-            let received_str = String::from_utf8_lossy(&serial_buf[..t]);
-            if let Some(start) = received_str.find("+RCV=") {
-                let data_parts: Vec<&str> = received_str[start..].split(',').collect();
-                if data_parts.len() > 2 {
-                    Ok(data_parts[2].to_string())
-                } else {
-                    Err(Box::new(io::Error::new(
-                        io::ErrorKind::Other,
-                        "No data found",
-                    )))
-                }
-            } else {
-                Err(Box::new(io::Error::new(
-                    io::ErrorKind::Other,
-                    "No data found",
-                )))
-            }
-        }
-        Err(_) => Err(Box::new(serialport::Error::new(
-            serialport::ErrorKind::NoDevice,
-            "Couldn't read from serial port",
-        ))),
     }
 }
