@@ -10,7 +10,7 @@ pub struct TemplateApp {
     #[serde(skip)]
     shared_messages: Arc<Mutex<Vec<String>>>,
     #[serde(skip)]
-    port: Arc<Mutex<Box<dyn SerialPort>>>,
+    port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
 }
 
 impl Default for TemplateApp {
@@ -18,10 +18,7 @@ impl Default for TemplateApp {
         Self {
             label: String::new(),
             shared_messages: Arc::new(Mutex::new(Vec::new())),
-            //opening a random port to avoid panic
-            port: Arc::new(Mutex::new(serialport::new("COM1", 9600).open().unwrap())),
-            //port: Arc::new(Mutex::new(serialport::new("/dev/ttyACM1", 9600).open().unwrap())),
-
+            port: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -30,7 +27,7 @@ impl TemplateApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         shared_messages: Arc<Mutex<Vec<String>>>,
-        serial_port: Arc<Mutex<Box<dyn SerialPort>>>,
+        serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
     ) -> Self {
         let port = serial_port.clone();
         if let Some(storage) = cc.storage {
@@ -48,17 +45,14 @@ impl TemplateApp {
     fn send_message(&self, input: &str) {
         let command = format!("AT+SEND=0,{},{}\r\n", input.trim().len(), input.trim());
 
-        // Lock the port for safe access
-        let mut port = match self.port.lock() {
-            Ok(port) => port,
-            Err(_) => {
-                eprintln!("Failed to lock the port");
-                return;
-            }
-        };
-
-        if let Err(e) = port.write(command.as_bytes()) {
-            eprintln!("Failed to write to serial port: {}", e);
+        match self.port.lock().unwrap().as_mut() {
+            Some(port) => match port.write(command.as_bytes()) {
+                Ok(_) => {}
+                Err(_) => {
+                    println!("Error writing to port");
+                }
+            },
+            None => {}
         }
     }
 }
@@ -100,7 +94,7 @@ impl eframe::App for TemplateApp {
                     self.shared_messages
                         .lock()
                         .unwrap()
-                        .push(format!("Message Sent: {}",self.label.clone()));
+                        .push(format!("Message Sent: {}", self.label.clone()));
                     self.send_message(&self.label.clone());
                 }
             });

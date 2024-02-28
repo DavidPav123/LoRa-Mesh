@@ -9,7 +9,7 @@ use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
     let port_name = "COM9"; // Example port name, adjust as needed
-    // let port_name = "/dev/ttyACM0"; // Example port name, adjust as needed
+                            // let port_name = "/dev/ttyACM0"; // Example port name, adjust as needed
     let baud_rate = 9600;
     let serial_port = Arc::new(Mutex::new(open_serial_port(port_name, baud_rate)));
     let ownable_serial_port = serial_port.clone();
@@ -26,6 +26,8 @@ fn main() -> eframe::Result<()> {
             match ownable_serial_port
                 .lock()
                 .unwrap()
+                .as_mut()
+                .unwrap()
                 .read(serial_buf.as_mut_slice())
             {
                 Ok(t) => {
@@ -34,7 +36,8 @@ fn main() -> eframe::Result<()> {
                         let data_parts: Vec<&str> = received_str[start..].split(',').collect();
                         if data_parts.len() > 2 {
                             let mut messages = messages_for_thread.lock().unwrap();
-                            messages.push(format!("Message Received: {}",data_parts[2].to_string()));
+                            messages
+                                .push(format!("Message Received: {}", data_parts[2].to_string()));
                         }
                     }
                 }
@@ -90,7 +93,7 @@ fn main() {
     });
 }
 
-fn open_serial_port(port_name: &str, baud_rate: u32) -> Box<dyn SerialPort> {
+fn open_serial_port(port_name: &str, baud_rate: u32) -> Option<Box<dyn SerialPort>> {
     let port = match serialport::new(port_name, baud_rate)
         .timeout(Duration::from_millis(10))
         .open()
@@ -101,5 +104,5 @@ fn open_serial_port(port_name: &str, baud_rate: u32) -> Box<dyn SerialPort> {
             panic!("Failed to open serial port");
         }
     };
-    port
+    Some(port)
 }
