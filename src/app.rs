@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 pub struct TemplateApp {
     // Example stuff:
     label: String,
-    messages: Vec<String>,
     #[serde(skip)]
     shared_messages: Arc<Mutex<Vec<String>>>,
     #[serde(skip)]
@@ -18,8 +17,8 @@ impl Default for TemplateApp {
     fn default() -> Self {
         Self {
             label: String::new(),
-            messages: Vec::new(),
             shared_messages: Arc::new(Mutex::new(Vec::new())),
+            //opening a random port to avoid panic
             port: Arc::new(Mutex::new(serialport::new("COM1 ", 9600).open().unwrap())),
         }
     }
@@ -92,31 +91,41 @@ impl eframe::App for TemplateApp {
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // Check for new data from the serial port
-
-            // Create a scroll area that automatically takes up all available space
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                // Example long content to demonstrate scrolling
-                for i in &self.messages {
-                    ui.horizontal(|ui| {
-                        ui.label(format!("Message Sent: {}", i));
-                        // This spacer pushes everything to the left, showing the scroll area's full width
-                        ui.add_space(ui.available_width());
-                    });
+        
+        
+        egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(&mut self.label);
+                if ui.button("Send").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    self.shared_messages
+                        .lock()
+                        .unwrap()
+                        .push(self.label.clone());
+                    self.send_message(&self.label.clone());
                 }
             });
+        });
 
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut self.label);
-                    if ui.button("Send").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter))
-                    {
-                        self.messages.push(self.label.clone());
-                        self.send_message(&self.label.clone());
+        egui::CentralPanel::default().show(ctx, |ui| {
+            // Check for new data from the serial port
+            ui.vertical_centered(|ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    // Example long content to demonstrate scrolling
+                    for i in self.shared_messages.lock().unwrap().iter() {
+                        ui.horizontal(|ui| {
+                            ui.label(format!("Message Sent: {}", i));
+                            // This spacer pushes everything to the left, showing the scroll area's full width
+                            ui.add_space(ui.available_width());
+                        });
                     }
+                    // Dummy label at the end of the content
+                    ui.label("");
+                    // Scroll to the position of the last added widget
+                    ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
                 });
+                // Your code for the central panel goes here...
             });
+            // Create a scroll area that automatically takes up all available space
         });
     }
 }

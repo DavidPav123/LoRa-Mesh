@@ -9,11 +9,12 @@ use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
     let port_name = "COM9"; // Example port name, adjust as needed
-    let baud_rate = 9600; // Example baud rate
+    // let port_name = "/dev/ttyUSB0"; // Example port name, adjust as needed
+    let baud_rate = 9600;
     let serial_port = Arc::new(Mutex::new(open_serial_port(port_name, baud_rate)));
     let ownable_serial_port = serial_port.clone();
 
-    let shared_messages = Arc::new(Mutex::new(Vec::new()));
+    let shared_messages = Arc::new(Mutex::new(vec!["Some Data".to_string()]));
     let messages_for_thread = shared_messages.clone();
 
     // Start the background thread for reading serial data
@@ -21,22 +22,25 @@ fn main() -> eframe::Result<()> {
         loop {
             // Simulate reading data and append it to the shared structure
             let mut serial_buf: Vec<u8> = vec![0; 240];
-            let mut port = ownable_serial_port.lock().unwrap();
-            match port.read(serial_buf.as_mut_slice()) {
+
+            match ownable_serial_port
+                .lock()
+                .unwrap()
+                .read(serial_buf.as_mut_slice())
+            {
                 Ok(t) => {
                     let received_str = String::from_utf8_lossy(&serial_buf[..t]);
                     if let Some(start) = received_str.find("+RCV=") {
+                        println!("Received: {}", &received_str[start..]);
                         let data_parts: Vec<&str> = received_str[start..].split(',').collect();
                         if data_parts.len() > 2 {
                             let mut messages = messages_for_thread.lock().unwrap();
                             messages.push(data_parts[2].to_string());
-                            drop(messages); // Explicitly release the lock
                         }
                     }
                 }
-                Err(_) => println!("Panicing the the thread"),
+                Err(_) => {}
             }
-            drop(port);
             thread::sleep(Duration::from_millis(500)); // Simulate work
         }
     });
