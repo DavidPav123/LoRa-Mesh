@@ -19,7 +19,9 @@ impl Default for TemplateApp {
             label: String::new(),
             shared_messages: Arc::new(Mutex::new(Vec::new())),
             //opening a random port to avoid panic
-            port: Arc::new(Mutex::new(serialport::new("COM1 ", 9600).open().unwrap())),
+            port: Arc::new(Mutex::new(serialport::new("COM1", 9600).open().unwrap())),
+            //port: Arc::new(Mutex::new(serialport::new("/dev/ttyACM1", 9600).open().unwrap())),
+
         }
     }
 }
@@ -91,8 +93,6 @@ impl eframe::App for TemplateApp {
             });
         });
 
-        
-        
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(&mut self.label);
@@ -100,7 +100,7 @@ impl eframe::App for TemplateApp {
                     self.shared_messages
                         .lock()
                         .unwrap()
-                        .push(self.label.clone());
+                        .push(format!("Message Sent: {}",self.label.clone()));
                     self.send_message(&self.label.clone());
                 }
             });
@@ -113,15 +113,11 @@ impl eframe::App for TemplateApp {
                     // Example long content to demonstrate scrolling
                     for i in self.shared_messages.lock().unwrap().iter() {
                         ui.horizontal(|ui| {
-                            ui.label(format!("Message Sent: {}", i));
+                            ui.label(format!("{}", i));
                             // This spacer pushes everything to the left, showing the scroll area's full width
                             ui.add_space(ui.available_width());
                         });
                     }
-                    // Dummy label at the end of the content
-                    ui.label("");
-                    // Scroll to the position of the last added widget
-                    ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
                 });
                 // Your code for the central panel goes here...
             });
