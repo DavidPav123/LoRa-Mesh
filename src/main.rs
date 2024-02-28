@@ -1,6 +1,6 @@
 #![warn(clippy::all, rust_2018_idioms)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
-use serialport::{self, SerialPort};
+use serialport::{self, available_ports, SerialPort};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -8,10 +8,7 @@ use std::time::Duration;
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
-    let port_name = "COM9"; // Example port name, adjust as needed
-                            // let port_name = "/dev/ttyACM0"; // Example port name, adjust as needed
-    let baud_rate = 9600;
-    let serial_port = Arc::new(Mutex::new(open_serial_port(port_name, baud_rate)));
+    let serial_port = Arc::new(Mutex::new(open_serial_port()));
     let ownable_serial_port = serial_port.clone();
 
     let shared_messages = Arc::new(Mutex::new(Vec::new()));
@@ -93,8 +90,30 @@ fn main() {
     });
 }
 
-fn open_serial_port(port_name: &str, baud_rate: u32) -> Option<Box<dyn SerialPort>> {
-    let port = match serialport::new(port_name, baud_rate)
+fn open_serial_port() -> Option<Box<dyn SerialPort>> {
+    let mut port_name = String::new();
+
+    match available_ports() {
+        Ok(ports) => {
+            for p in ports {
+                match p.port_type {
+                    serialport::SerialPortType::UsbPort(info) => {
+                        // Many Arduinos have a VID of 0x2341 and PIDs of 0x0042 or 0x0043
+                        if info.vid == 0x2341 && (info.pid == 0x0042 || info.pid == 0x0043) {
+                            port_name = p.port_name;
+                            println!("Arduino found on port: {}", port_name);
+                        }
+                    }
+                    _ => (),
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("{:?}", e);
+        }
+    }
+
+    let port = match serialport::new(port_name, 9600)
         .timeout(Duration::from_millis(10))
         .open()
     {
