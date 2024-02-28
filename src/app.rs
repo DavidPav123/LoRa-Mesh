@@ -11,7 +11,7 @@ pub struct TemplateApp {
     #[serde(skip)]
     shared_messages: Arc<Mutex<Vec<String>>>,
     #[serde(skip)]
-    serial_port: Option<Arc<Mutex<Box<dyn SerialPort>>>>,
+    port: Arc<Mutex<Box<dyn SerialPort>>>,
 }
 
 impl Default for TemplateApp {
@@ -19,21 +19,39 @@ impl Default for TemplateApp {
         Self {
             label: String::new(),
             messages: Vec::new(),
-            serial_port: None,
             shared_messages: Arc::new(Mutex::new(Vec::new())),
+            port: Arc::new(Mutex::new(serialport::new("COM1 ", 9600).open().unwrap())),
         }
     }
 }
 
 impl TemplateApp {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        shared_messages: Arc<Mutex<Vec<String>>>,
+        serial_port: Arc<Mutex<Box<dyn SerialPort>>>,
+    ) -> Self {
+        let port = serial_port.clone();
+        if let Some(storage) = cc.storage {
+            let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            // Update the app with the shared messages after loading
+            app.shared_messages = shared_messages;
+            app.port = port;
+
+            return app;
+        }
+
+        Default::default()
+    }
+
     fn send_message(&self, input: &str) {
         let command = format!("AT+SEND=0,{},{}\r\n", input.trim().len(), input.trim());
 
-        // Lock the serial port for safe access
-        let mut port = match self.serial_port.as_ref().expect("Something").lock() {
+        // Lock the port for safe access
+        let mut port = match self.port.lock() {
             Ok(port) => port,
             Err(_) => {
-                eprintln!("Failed to lock the serial port");
+                eprintln!("Failed to lock the port");
                 return;
             }
         };
@@ -41,24 +59,6 @@ impl TemplateApp {
         if let Err(e) = port.write(command.as_bytes()) {
             eprintln!("Failed to write to serial port: {}", e);
         }
-    }
-
-    pub fn new(
-        cc: &eframe::CreationContext<'_>,
-        shared_messages: Arc<Mutex<Vec<String>>>,
-        serial_port: Arc<Mutex<Box<dyn SerialPort>>>,
-    ) -> Self {
-        let serial_port = serial_port.clone();
-        if let Some(storage) = cc.storage {
-            let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-            // Update the app with the shared messages after loading
-            app.shared_messages = shared_messages;
-            app.serial_port = Some(serial_port);
-
-            return app;
-        }
-
-        Default::default()
     }
 }
 

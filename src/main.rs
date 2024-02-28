@@ -1,6 +1,6 @@
 #![warn(clippy::all, rust_2018_idioms)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
-use serialport::SerialPort;
+use serialport::{self, SerialPort};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -8,22 +8,21 @@ use std::time::Duration;
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
-    let shared_messages = Arc::new(Mutex::new(Vec::new()));
-    // Clone the Arc to safely share with the background thread
-    let messages_for_thread = shared_messages.clone();
-
-    // Open the serial port here
     let port_name = "COM9"; // Example port name, adjust as needed
     let baud_rate = 9600; // Example baud rate
-    let mut serial_port = Arc::new(Mutex::new(open_serial_port(port_name, baud_rate)));
+    let serial_port = Arc::new(Mutex::new(open_serial_port(port_name, baud_rate)));
+    let ownable_serial_port = serial_port.clone();
+
+    let shared_messages = Arc::new(Mutex::new(Vec::new()));
+    let messages_for_thread = shared_messages.clone();
 
     // Start the background thread for reading serial data
     thread::spawn(move || {
         loop {
             // Simulate reading data and append it to the shared structure
             let mut serial_buf: Vec<u8> = vec![0; 240];
-            let mut serial_port = serial_port.lock().unwrap();
-            match serial_port.read(serial_buf.as_mut_slice()) {
+            let mut port = ownable_serial_port.lock().unwrap();
+            match port.read(serial_buf.as_mut_slice()) {
                 Ok(t) => {
                     let received_str = String::from_utf8_lossy(&serial_buf[..t]);
                     if let Some(start) = received_str.find("+RCV=") {
@@ -32,46 +31,15 @@ fn main() -> eframe::Result<()> {
                             let mut messages = messages_for_thread.lock().unwrap();
                             messages.push(data_parts[2].to_string());
                             drop(messages); // Explicitly release the lock
-                        } 
+                        }
                     }
                 }
-                Err(_) => todo!(),
+                Err(_) => println!("Panicing the the thread"),
             }
-            drop(serial_port);
+            drop(port);
             thread::sleep(Duration::from_millis(500)); // Simulate work
         }
     });
-
-    /*fn receive_data(port: &mut dyn SerialPort) -> Result<String, Box<dyn Error>> {
-    let mut serial_buf: Vec<u8> = vec![0; 240];
-    match port.read(serial_buf.as_mut_slice()) {
-        Ok(t) => {
-            let received_str = String::from_utf8_lossy(&serial_buf[..t]);
-            if let Some(start) = received_str.find("+RCV=") {
-                let data_parts: Vec<&str> = received_str[start..].split(',').collect();
-                if data_parts.len() > 2 {
-                    Ok(data_parts[2].to_string())
-                } else {
-                    Err(Box::new(io::Error::new(
-                        io::ErrorKind::Other,
-                        "No data found",
-                    )))
-                }
-            } else {
-                Err(Box::new(io::Error::new(
-                    io::ErrorKind::Other,
-                    "No data found",
-                )))
-            }
-        }
-        Err(_) => Err(Box::new(serialport::Error::new(
-            serialport::ErrorKind::NoDevice,
-            "Couldn't read from serial port",
-        ))),
-    }
-} */
-
-    
 
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
@@ -120,9 +88,15 @@ fn main() {
 }
 
 fn open_serial_port(port_name: &str, baud_rate: u32) -> Box<dyn SerialPort> {
-    let port = serialport::new(port_name, baud_rate)
+    let port = match serialport::new(port_name, baud_rate)
         .timeout(Duration::from_millis(10))
         .open()
-        .expect("Failed to open serial port");
+    {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Failed to open serial port: {}", e);
+            panic!("Failed to open serial port");
+        }
+    };
     port
 }
