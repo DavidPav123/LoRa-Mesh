@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
-    // Example stuff:
+    //Init variables for the app
+    #[serde(skip)]
     label: String,
     #[serde(skip)]
     shared_messages: Arc<Mutex<Vec<String>>>,
@@ -45,14 +46,17 @@ impl TemplateApp {
     fn send_message(&self, input: &str) {
         let command = format!("AT+SEND=0,{},{}\r\n", input.trim().len(), input.trim());
 
-        match self.port.lock().unwrap().as_mut() {
-            Some(port) => match port.write(command.as_bytes()) {
-                Ok(_) => {}
-                Err(_) => {
-                    println!("Error writing to port");
+        match self.port.lock() {
+            Ok(mut port_option) => {
+                if let Some(port) = port_option.as_mut() {
+                    if let Err(_) = port.write(command.as_bytes()) {
+                        println!("Error writing to port");
+                    }
                 }
-            },
-            None => {}
+            }
+            Err(_) => {
+                println!("Error locking the port");
+            }
         }
     }
 }
@@ -91,11 +95,15 @@ impl eframe::App for TemplateApp {
             ui.horizontal(|ui| {
                 ui.text_edit_singleline(&mut self.label);
                 if ui.button("Send").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    self.shared_messages
-                        .lock()
-                        .unwrap()
-                        .push(format!("Message Sent: {}", self.label.clone()));
-                    self.send_message(&self.label.clone());
+                    match self.shared_messages.lock() {
+                        Ok(mut messages) => {
+                            messages.push(format!("Message Sent: {}", self.label.clone()));
+                            self.send_message(&self.label.clone());
+                        }
+                        Err(_) => {
+                            eprintln!("Failed to lock shared_messages for writing");
+                        }
+                    }
                 }
             });
         });
@@ -105,12 +113,19 @@ impl eframe::App for TemplateApp {
             ui.vertical_centered(|ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     // Example long content to demonstrate scrolling
-                    for i in self.shared_messages.lock().unwrap().iter() {
-                        ui.horizontal(|ui| {
-                            ui.label(format!("{}", i));
-                            // This spacer pushes everything to the left, showing the scroll area's full width
-                            ui.add_space(ui.available_width());
-                        });
+                    match self.shared_messages.lock() {
+                        Ok(messages) => {
+                            for i in messages.iter() {
+                                ui.horizontal(|ui| {
+                                    ui.label(format!("{}", i));
+                                    // This spacer pushes everything to the left, showing the scroll area's full width
+                                    ui.add_space(ui.available_width());
+                                });
+                            }
+                        }
+                        Err(_) => {
+                            eprintln!("Failed to lock shared_messages for reading");
+                        }
                     }
                 });
                 // Your code for the central panel goes here...

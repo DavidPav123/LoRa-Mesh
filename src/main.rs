@@ -114,6 +114,7 @@ fn open_serial_port() -> Option<Box<dyn SerialPort>> {
     }
 }
 
+
 fn start_serial_read_thread(
     ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
     messages_for_thread: Arc<Mutex<Vec<String>>>,
