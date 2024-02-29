@@ -20,25 +20,34 @@ fn main() -> eframe::Result<()> {
             // Simulate reading data and append it to the shared structure
             let mut serial_buf: Vec<u8> = vec![0; 240];
 
-            match ownable_serial_port
-                .lock()
-                .unwrap()
-                .as_mut()
-                .unwrap()
-                .read(serial_buf.as_mut_slice())
-            {
-                Ok(t) => {
-                    let received_str = String::from_utf8_lossy(&serial_buf[..t]);
-                    if let Some(start) = received_str.find("+RCV=") {
-                        let data_parts: Vec<&str> = received_str[start..].split(',').collect();
-                        if data_parts.len() > 2 {
-                            let mut messages = messages_for_thread.lock().unwrap();
-                            messages
-                                .push(format!("Message Received: {}", data_parts[2].to_string()));
+            match ownable_serial_port.lock() {
+                Ok(mut lock) => {
+                    if let Some(port) = lock.as_mut() {
+                        match port.read(serial_buf.as_mut_slice()) {
+                            Ok(t) => {
+                                let received_str = String::from_utf8_lossy(&serial_buf[..t]);
+                                if let Some(start) = received_str.find("+RCV=") {
+                                    let data_parts: Vec<&str> = received_str[start..].split(',').collect();
+                                    if data_parts.len() > 2 {
+                                        if let Ok(mut messages) = messages_for_thread.lock() {
+                                            messages.push(format!("Message Received: {}", data_parts[2].to_string()));
+                                        } else {
+                                            eprintln!("Failed to lock messages_for_thread");
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to read from serial port: {}", e);
+                            }
                         }
+                    } else {
+                        eprintln!("Serial port is not available");
                     }
                 }
-                Err(_) => {}
+                Err(e) => {
+                    eprintln!("Failed to lock ownable_serial_port: {}", e);
+                }
             }
             thread::sleep(Duration::from_millis(500)); // Simulate work
         }
@@ -97,31 +106,44 @@ fn open_serial_port() -> Option<Box<dyn SerialPort>> {
         Ok(ports) => {
             for p in ports {
                 match p.port_type {
-                    serialport::SerialPortType::UsbPort(info) => {
+                    serialport::SerialPortType::UsbPort(USB_info) => {
                         // Many Arduinos have a VID of 0x2341 and PIDs of 0x0042 or 0x0043
-                        if info.vid == 0x2341 && (info.pid == 0x0042 || info.pid == 0x0043) {
+                        if USB_info.vid == 0x2341 && (USB_info.pid == 0x0042 || USB_info.pid == 0x0043) {
                             port_name = p.port_name;
-                            println!("Arduino found on port: {}", port_name);
                         }
-                    }
-                    _ => (),
+                    },
+                    serialport::SerialPortType::PciPort => {
+                        eprintln!("Haven't implimented handling Pci Devices")
+                    },
+                    serialport::SerialPortType::BluetoothPort => {
+                        eprintln!("Haven't implimented handling Bluetooth Devices")
+                    },
+                    serialport::SerialPortType::Unknown => {
+                        eprintln!("Haven't implimented handling unknown devices")
+                    },
                 }
             }
         }
         Err(e) => {
-            eprintln!("{:?}", e);
+            eprintln!(
+                "Error occurred when attempting to read available serial ports: {:?}",
+                e
+            );
         }
     }
 
-    let port = match serialport::new(port_name, 9600)
+    if port_name.is_empty() {
+        return None;
+    }
+
+    match serialport::new(port_name, 9600)
         .timeout(Duration::from_millis(10))
         .open()
     {
-        Ok(p) => p,
+        Ok(p) => Some(p),
         Err(e) => {
             eprintln!("Failed to open serial port: {}", e);
-            panic!("Failed to open serial port");
+            None
         }
-    };
-    Some(port)
+    }
 }
