@@ -15,43 +15,7 @@ fn main() -> eframe::Result<()> {
     let messages_for_thread = shared_messages.clone();
 
     // Start the background thread for reading serial data
-    thread::spawn(move || {
-        loop {
-            // Simulate reading data and append it to the shared structure
-            let mut serial_buf: Vec<u8> = vec![0; 240];
-
-            match ownable_serial_port.lock() {
-                Ok(mut lock) => {
-                    if let Some(port) = lock.as_mut() {
-                        match port.read(serial_buf.as_mut_slice()) {
-                            Ok(t) => {
-                                let received_str = String::from_utf8_lossy(&serial_buf[..t]);
-                                if let Some(start) = received_str.find("+RCV=") {
-                                    let data_parts: Vec<&str> = received_str[start..].split(',').collect();
-                                    if data_parts.len() > 2 {
-                                        if let Ok(mut messages) = messages_for_thread.lock() {
-                                            messages.push(format!("Message Received: {}", data_parts[2].to_string()));
-                                        } else {
-                                            eprintln!("Failed to lock messages_for_thread");
-                                        }
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("Failed to read from serial port: {}", e);
-                            }
-                        }
-                    } else {
-                        eprintln!("Serial port is not available");
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Failed to lock ownable_serial_port: {}", e);
-                }
-            }
-            thread::sleep(Duration::from_millis(500)); // Simulate work
-        }
-    });
+    start_serial_read_thread(ownable_serial_port, messages_for_thread);
 
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
@@ -106,21 +70,23 @@ fn open_serial_port() -> Option<Box<dyn SerialPort>> {
         Ok(ports) => {
             for p in ports {
                 match p.port_type {
-                    serialport::SerialPortType::UsbPort(USB_info) => {
+                    serialport::SerialPortType::UsbPort(usb_info) => {
                         // Many Arduinos have a VID of 0x2341 and PIDs of 0x0042 or 0x0043
-                        if USB_info.vid == 0x2341 && (USB_info.pid == 0x0042 || USB_info.pid == 0x0043) {
+                        if usb_info.vid == 0x2341
+                            && (usb_info.pid == 0x0042 || usb_info.pid == 0x0043)
+                        {
                             port_name = p.port_name;
                         }
-                    },
+                    }
                     serialport::SerialPortType::PciPort => {
                         eprintln!("Haven't implimented handling Pci Devices")
-                    },
+                    }
                     serialport::SerialPortType::BluetoothPort => {
                         eprintln!("Haven't implimented handling Bluetooth Devices")
-                    },
+                    }
                     serialport::SerialPortType::Unknown => {
                         eprintln!("Haven't implimented handling unknown devices")
-                    },
+                    }
                 }
             }
         }
@@ -146,4 +112,51 @@ fn open_serial_port() -> Option<Box<dyn SerialPort>> {
             None
         }
     }
+}
+
+fn start_serial_read_thread(
+    ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
+    messages_for_thread: Arc<Mutex<Vec<String>>>,
+) {
+    thread::spawn(move || {
+        loop {
+            // Simulate reading data and append it to the shared structure
+            let mut serial_buf: Vec<u8> = vec![0; 240];
+
+            match ownable_serial_port.lock() {
+                Ok(mut lock) => {
+                    if let Some(port) = lock.as_mut() {
+                        match port.read(serial_buf.as_mut_slice()) {
+                            Ok(t) => {
+                                let received_str = String::from_utf8_lossy(&serial_buf[..t]);
+                                if let Some(start) = received_str.find("+RCV=") {
+                                    let data_parts: Vec<&str> =
+                                        received_str[start..].split(',').collect();
+                                    if data_parts.len() > 2 {
+                                        if let Ok(mut messages) = messages_for_thread.lock() {
+                                            messages.push(format!(
+                                                "Message Received: {}",
+                                                data_parts[2].to_string()
+                                            ));
+                                        } else {
+                                            eprintln!("Failed to lock messages_for_thread");
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to read from serial port: {}", e);
+                            }
+                        }
+                    } else {
+                        eprintln!("Serial port is not available");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to lock ownable_serial_port: {}", e);
+                }
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+    });
 }
