@@ -137,16 +137,20 @@ fn start_serial_read_thread(
                         Ok(t) => {
                             let received_str = String::from_utf8_lossy(&serial_buf[..t]);
                             if let Some(start) = received_str.find("+RCV=") {
-                                let data_parts: Vec<&str> =
-                                    received_str[start..].split(',').collect();
-                                if data_parts.len() > 2 {
-                                    if let Ok(mut messages) = messages_for_thread.lock() {
-                                        messages.push(format!(
-                                            "Message Received: {}",
-                                            data_parts[2].to_string()
-                                        ));
-                                    } else {
-                                        eprintln!("Failed to lock messages_for_thread");
+                                if let Some(name) = userid.lock().unwrap().as_ref() {
+                                    if received_str.contains(name) {
+                                        let data_parts: Vec<&str> =
+                                            received_str[start..].split(',').collect();
+                                        if data_parts.len() > 2 {
+                                            if let Ok(mut messages) = messages_for_thread.lock() {
+                                                messages.push(format!(
+                                                    "Message Received: {}",
+                                                    data_parts[2].to_string()
+                                                ));
+                                            } else {
+                                                eprintln!("Failed to lock messages_for_thread");
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -171,20 +175,21 @@ fn get_username(ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>) ->
     match ownable_serial_port.lock() {
         Ok(mut lock) => {
             if let Some(port) = lock.as_mut() {
+                //Wait for arduino startup
                 thread::sleep(Duration::from_millis(2000));
                 let mut serial_buf: Vec<u8> = vec![0; 240];
+                //Take initial message out of the serial buffer
                 port.read(serial_buf.as_mut_slice())
                     .expect("Failed at this point");
-                thread::sleep(Duration::from_millis(1000));
                 if let Err(_) = port.write(format!("AT+UID?\r\n").as_bytes()) {
                     eprintln!("Error writing to port during get_username");
                 }
-                thread::sleep(Duration::from_millis(2000));
+                //Wait for arduino to respond
+                thread::sleep(Duration::from_millis(100));
 
                 match port.read(serial_buf.as_mut_slice()) {
                     Ok(t) => {
                         let received_str = String::from_utf8_lossy(&serial_buf[..t]);
-                        eprintln!("Received: {}", received_str);
                         if let Some(start) = received_str.find("+UID=") {
                             let data_parts: Vec<&str> = received_str[start..].split('=').collect();
                             if data_parts.len() == 2 {
