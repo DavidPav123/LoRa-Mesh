@@ -12,6 +12,10 @@ pub struct TemplateApp {
     shared_messages: Arc<Mutex<Vec<String>>>,
     #[serde(skip)]
     port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
+    #[serde(skip)]
+    username: Arc<Mutex<Option<String>>>,
+    #[serde(skip)]
+    target_user: Arc<Mutex<Option<String>>>,
 }
 
 impl Default for TemplateApp {
@@ -20,6 +24,8 @@ impl Default for TemplateApp {
             label: String::new(),
             shared_messages: Arc::new(Mutex::new(Vec::new())),
             port: Arc::new(Mutex::new(None)),
+            username: Arc::new(Mutex::new(None)),
+            target_user: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -29,13 +35,16 @@ impl TemplateApp {
         cc: &eframe::CreationContext<'_>,
         shared_messages: Arc<Mutex<Vec<String>>>,
         serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
+        username: Arc<Mutex<Option<String>>>,
+        target_user: Arc<Mutex<Option<String>>>,
     ) -> Self {
-        let port = serial_port.clone();
         if let Some(storage) = cc.storage {
             let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
             // Update the app with the shared messages after loading
-            app.shared_messages = shared_messages;
-            app.port = port;
+            app.shared_messages = shared_messages.clone();
+            app.port = serial_port.clone();
+            app.username = username.clone();
+            app.target_user = target_user.clone();
 
             return app;
         }

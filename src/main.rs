@@ -9,13 +9,23 @@ use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
     let serial_port = Arc::new(Mutex::new(open_serial_port()));
-    let ownable_serial_port = serial_port.clone();
-
     let shared_messages = Arc::new(Mutex::new(Vec::new()));
-    let messages_for_thread = shared_messages.clone();
+    let username = Arc::new(Mutex::new(get_username(serial_port.clone())));
+    let target_user = Arc::new(Mutex::new(std::option::Option::Some(
+        "002E0051044A7EE100003ACA".to_string(),
+    )));
 
-    // Start the background thread for reading serial data
-    start_serial_read_thread(ownable_serial_port, messages_for_thread);
+    if let Some(name) = username.lock().unwrap().as_ref() {
+        println!("{}", name);
+    } else {
+        println!("No username found");
+    }
+
+    start_serial_read_thread(
+        serial_port.clone(),
+        shared_messages.clone(),
+        username.clone(),
+    );
 
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
@@ -38,6 +48,8 @@ fn main() -> eframe::Result<()> {
                 cc,
                 shared_messages,
                 serial_port,
+                username,
+                target_user,
             ))
         }),
     )
@@ -114,50 +126,88 @@ fn open_serial_port() -> Option<Box<dyn SerialPort>> {
     }
 }
 
-
 fn start_serial_read_thread(
     ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
     messages_for_thread: Arc<Mutex<Vec<String>>>,
+    username: Arc<Mutex<Option<String>>>,
 ) {
-    thread::spawn(move || {
-        loop {
-            // Simulate reading data and append it to the shared structure
-            let mut serial_buf: Vec<u8> = vec![0; 240];
+    thread::spawn(move || loop {
+        let mut serial_buf: Vec<u8> = vec![0; 240];
 
-            match ownable_serial_port.lock() {
-                Ok(mut lock) => {
-                    if let Some(port) = lock.as_mut() {
-                        match port.read(serial_buf.as_mut_slice()) {
-                            Ok(t) => {
-                                let received_str = String::from_utf8_lossy(&serial_buf[..t]);
-                                if let Some(start) = received_str.find("+RCV=") {
-                                    let data_parts: Vec<&str> =
-                                        received_str[start..].split(',').collect();
-                                    if data_parts.len() > 2 {
-                                        if let Ok(mut messages) = messages_for_thread.lock() {
-                                            messages.push(format!(
-                                                "Message Received: {}",
-                                                data_parts[2].to_string()
-                                            ));
-                                        } else {
-                                            eprintln!("Failed to lock messages_for_thread");
-                                        }
+        match ownable_serial_port.lock() {
+            Ok(mut lock) => {
+                if let Some(port) = lock.as_mut() {
+                    match port.read(serial_buf.as_mut_slice()) {
+                        Ok(t) => {
+                            let received_str = String::from_utf8_lossy(&serial_buf[..t]);
+                            if let Some(start) = received_str.find("+RCV=") {
+                                let data_parts: Vec<&str> =
+                                    received_str[start..].split(',').collect();
+                                if data_parts.len() > 2 {
+                                    if let Ok(mut messages) = messages_for_thread.lock() {
+                                        messages.push(format!(
+                                            "Message Received: {}",
+                                            data_parts[2].to_string()
+                                        ));
+                                    } else {
+                                        eprintln!("Failed to lock messages_for_thread");
                                     }
                                 }
                             }
-                            Err(e) => {
-                                eprintln!("Failed to read from serial port: {}", e);
-                            }
                         }
-                    } else {
-                        eprintln!("Serial port is not available");
+                        Err(e) => {
+                            eprintln!("Failed to read from serial port: {}", e);
+                        }
                     }
-                }
-                Err(e) => {
-                    eprintln!("Failed to lock ownable_serial_port: {}", e);
+                } else {
+                    eprintln!("Serial port is not available");
                 }
             }
-            thread::sleep(Duration::from_millis(500));
+            Err(e) => {
+                eprintln!("Failed to lock ownable_serial_port: {}", e);
+            }
         }
+        thread::sleep(Duration::from_millis(500));
     });
+}
+fn get_username(ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>) -> Option<String> {
+    let mut result: Option<String> = None;
+    match ownable_serial_port.lock() {
+        Ok(mut lock) => {
+            if let Some(port) = lock.as_mut() {
+                thread::sleep(Duration::from_millis(2000));
+                let mut serial_buf: Vec<u8> = vec![0; 240];
+                port.read(serial_buf.as_mut_slice())
+                    .expect("Failed at this point");
+                thread::sleep(Duration::from_millis(1000));
+                if let Err(_) = port.write(format!("AT+UID?\r\n").as_bytes()) {
+                    eprintln!("Error writing to port during get_username");
+                }
+                thread::sleep(Duration::from_millis(2000));
+
+                match port.read(serial_buf.as_mut_slice()) {
+                    Ok(t) => {
+                        let received_str = String::from_utf8_lossy(&serial_buf[..t]);
+                        eprintln!("Received: {}", received_str);
+                        if let Some(start) = received_str.find("+UID=") {
+                            let data_parts: Vec<&str> = received_str[start..].split('=').collect();
+                            if data_parts.len() == 2 {
+                                result = Some(data_parts[1].trim().to_string());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to read from serial port: {}", e);
+                    }
+                }
+            } else {
+                eprintln!("Serial port is not available");
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to lock ownable_serial_port: {}", e);
+        }
+    }
+    thread::sleep(Duration::from_millis(500));
+    result
 }
