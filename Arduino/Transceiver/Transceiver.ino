@@ -8,44 +8,39 @@ int txPin = 3; // Connect to RX of LoRa module
 SoftwareSerial LoRaSerial(rxPin, txPin);
 
 void setup() {
-  // Open serial communications and wait for port to open:
-  Serial.begin(9600);
-  // Set up the software serial port for the LoRa module
-  LoRaSerial.begin(9600);
+    // Set up the software serial port for the LoRa module
+    LoRaSerial.begin(9600);
 
-  Serial.println("Serial communication with LoRa module started. Type AT commands:");
+    // Open serial communications and wait for port to open:
+    Serial.begin(9600);
+    Serial.println("Serial communication with LoRa module started. Type AT commands:");
 }
 
 void loop() {
-  static String inputString = ""; // A String to hold incoming data
-  static boolean stringComplete = false; // Whether the string is complete
+    static String inputString = "";
+    static boolean stringComplete = false;
 
-  if (Serial.available()) {
-    char inChar = (char)Serial.read();
-    // Add the incoming char to the string:
-    inputString += inChar;
-    // If the incoming character is a newline, set the string as complete
-    if (inChar == '\n') {
-      stringComplete = true;
+    // Read data from the computer and send it to the LoRa module character by character
+    if (Serial.available()) {
+        char inChar = (char)Serial.read();
+        inputString += inChar;
+        if (inChar == '\n') {
+            stringComplete = true;
+        }
     }
-  }
 
-  // If the string is complete, convert it to a char array and send it to the LoRa module
-  if (stringComplete) {
-    // Allocate a buffer for the character array. Add 1 for the null terminator.
-    char charBuf[inputString.length() + 1];
-    // Convert the String to a char array
-    inputString.toCharArray(charBuf, inputString.length() + 1);
-    // Send the char array to the LoRa module
-    LoRaSerial.write(charBuf, inputString.length());
+    // If the string is complete, convert it to a char array and send it to the LoRa module
+    if (stringComplete) {
+        char charBuf[inputString.length() + 1];
+        inputString.toCharArray(charBuf, inputString.length() + 1);
+        LoRaSerial.write(charBuf, inputString.length());
 
-    // Optionally, clear the inputString and reset stringComplete for the next input
-    inputString = ""; // Clear the string for new input
-    stringComplete = false; // Reset the flag
-  }
+        inputString = "";
+        stringComplete = false;
+    }
 
-  // If data is available from the LoRa module, send it back to the computer
-  if (LoRaSerial.available()) {
-    Serial.write(LoRaSerial.read());
-  }
+    // If data is available from the LoRa module, send it back to the computer
+    if (LoRaSerial.available()) {
+        Serial.write(LoRaSerial.read());
+    }
 }
