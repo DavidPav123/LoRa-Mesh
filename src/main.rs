@@ -10,22 +10,18 @@ use std::time::Duration;
 fn main() -> eframe::Result<()> {
     let serial_port = Arc::new(Mutex::new(open_serial_port()));
     let shared_messages = Arc::new(Mutex::new(Vec::new()));
-    let username = Arc::new(Mutex::new(get_username(serial_port.clone())));
+    let userid = Arc::new(Mutex::new(get_username(serial_port.clone())));
     let target_user = Arc::new(Mutex::new(std::option::Option::Some(
         "002E0051044A7EE100003ACA".to_string(),
     )));
 
-    if let Some(name) = username.lock().unwrap().as_ref() {
+    if let Some(name) = userid.lock().unwrap().as_ref() {
         println!("{}", name);
     } else {
-        println!("No username found");
+        println!("No userid found");
     }
 
-    start_serial_read_thread(
-        serial_port.clone(),
-        shared_messages.clone(),
-        username.clone(),
-    );
+    start_serial_read_thread(serial_port.clone(), shared_messages.clone(), userid.clone());
 
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
@@ -48,7 +44,7 @@ fn main() -> eframe::Result<()> {
                 cc,
                 shared_messages,
                 serial_port,
-                username,
+                userid,
                 target_user,
             ))
         }),
@@ -129,7 +125,7 @@ fn open_serial_port() -> Option<Box<dyn SerialPort>> {
 fn start_serial_read_thread(
     ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
     messages_for_thread: Arc<Mutex<Vec<String>>>,
-    username: Arc<Mutex<Option<String>>>,
+    userid: Arc<Mutex<Option<String>>>,
 ) {
     thread::spawn(move || loop {
         let mut serial_buf: Vec<u8> = vec![0; 240];
