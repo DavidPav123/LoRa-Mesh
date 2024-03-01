@@ -137,20 +137,33 @@ fn start_serial_read_thread(
                         Ok(t) => {
                             let received_str = String::from_utf8_lossy(&serial_buf[..t]);
                             if let Some(start) = received_str.find("+RCV=") {
-                                if let Some(name) = userid.lock().unwrap().as_ref() {
-                                    if received_str.contains(name) {
-                                        let data_parts: Vec<&str> =
-                                            received_str[start..].split(',').collect();
-                                        if data_parts.len() > 2 {
-                                            if let Ok(mut messages) = messages_for_thread.lock() {
-                                                messages.push(format!(
-                                                    "Message Received: {}",
-                                                    data_parts[2].to_string()
-                                                ));
-                                            } else {
-                                                eprintln!("Failed to lock messages_for_thread");
+                                match userid.lock() {
+                                    Ok(userid_lock) => {
+                                        if let Some(name) = userid_lock.as_ref() {
+                                            if received_str.contains(name) {
+                                                let data_parts: Vec<&str> =
+                                                    received_str[start..].split(',').collect();
+                                                if data_parts.len() > 2 {
+                                                    if data_parts[2].starts_with(name) {
+                                                        if let Ok(mut messages) =
+                                                            messages_for_thread.lock()
+                                                        {
+                                                            messages.push(format!(
+                                                                "Message Received: {}",
+                                                                data_parts[2].to_string()
+                                                            ));
+                                                        } else {
+                                                            eprintln!(
+                                                            "Failed to lock messages_for_thread"
+                                                        );
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to lock userid: {}", e);
                                     }
                                 }
                             }
@@ -179,8 +192,13 @@ fn get_username(ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>) ->
                 thread::sleep(Duration::from_millis(2000));
                 let mut serial_buf: Vec<u8> = vec![0; 240];
                 //Take initial message out of the serial buffer
-                port.read(serial_buf.as_mut_slice())
-                    .expect("Failed at this point");
+                match port.read(serial_buf.as_mut_slice()) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("Didn't wait long enough before reading from serial: {}", e);
+                        return None;
+                    }
+                }
                 if let Err(_) = port.write(format!("AT+UID?\r\n").as_bytes()) {
                     eprintln!("Error writing to port during get_username");
                 }

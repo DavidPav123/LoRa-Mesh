@@ -53,7 +53,17 @@ impl TemplateApp {
     }
 
     fn send_message(&self, input: &str) {
-        let command = format!("AT+SEND=0,{},{}\r\n", input.trim().len(), input.trim());
+        let recipient_binding = self.target_user.lock().unwrap();
+        let recipient = recipient_binding.as_ref().unwrap();
+        let sender_binding = self.userid.lock().unwrap();
+        let sender = sender_binding.as_ref().unwrap();
+        let command = format!(
+            "AT+SEND=0,{},{}{}{}\r\n",
+            input.trim().len() + 48,
+            recipient,
+            sender,
+            input.trim()
+        );
 
         match self.port.lock() {
             Ok(mut port_option) => {
