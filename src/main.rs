@@ -76,6 +76,9 @@ fn open_serial_port() -> Option<Box<dyn SerialPort>> {
 
     match available_ports() {
         Ok(ports) => {
+            for i in ports.iter() {
+                println!("{:?}", i);
+            }
             for p in ports {
                 match p.port_type {
                     serialport::SerialPortType::UsbPort(usb_info) => {
@@ -191,14 +194,6 @@ fn get_username(ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>) ->
                 //Wait for arduino startup
                 thread::sleep(Duration::from_millis(2000));
                 let mut serial_buf: Vec<u8> = vec![0; 240];
-                //Take initial message out of the serial buffer
-                match port.read(serial_buf.as_mut_slice()) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        eprintln!("Didn't wait long enough before reading from serial: {}", e);
-                        return None;
-                    }
-                }
                 if let Err(_) = port.write(format!("AT+UID?\r\n").as_bytes()) {
                     eprintln!("Error writing to port during get_username");
                 }

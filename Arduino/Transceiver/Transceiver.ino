@@ -13,7 +13,7 @@ void setup() {
 
     // Open serial communications and wait for port to open:
     Serial.begin(9600);
-    Serial.println("Serial communication with LoRa module started. Type AT commands:");
+    //Serial.println("Serial communication with LoRa module started. Type AT commands:");
 }
 
 void loop() {
