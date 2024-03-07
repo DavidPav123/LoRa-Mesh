@@ -12,7 +12,7 @@ fn main() -> eframe::Result<()> {
     let shared_messages = Arc::new(Mutex::new(Vec::new()));
     let userid = Arc::new(Mutex::new(get_username(serial_port.clone())));
     let target_user = Arc::new(Mutex::new(std::option::Option::Some(
-        "002E0051044A7EE100003ACA".to_string(),
+        "002E0051044A7EE1000026BF".to_string(),
     )));
 
     if let Some(name) = userid.lock().unwrap().as_ref() {

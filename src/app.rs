@@ -151,5 +151,6 @@ impl eframe::App for TemplateApp {
             });
             // Create a scroll area that automatically takes up all available space
         });
+        ctx.request_repaint()
     }
 }
