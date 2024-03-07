@@ -7,4 +7,5 @@ To-Do:
 - Impliment message confirmation to resend packets if an error is received.
 - Imporve UI.
 - Impliment Encryption.
-- Message rollover so if the message is larger than 240 Bytes it will roll over into another packet.
+- Impliment a message too long notification.
+  - Message rollover so if the message is larger than 240 Bytes it will roll over into another packet.
