@@ -136,8 +136,11 @@ impl eframe::App for TemplateApp {
                         Ok(messages) => {
                             for i in messages.iter() {
                                 if i.starts_with("Message Received") {
+                                    let (prefix, rest) = i.split_at("Message Received: ".len());
+                                    let message = rest.split_at(48).1;
+                                    let full_message = format!("{}{}", prefix, message);
                                     ui.horizontal(|ui| {
-                                        ui.label(format!("{}", i));
+                                        ui.label(format!("{}", full_message));
                                         // This spacer pushes everything to the left, showing the scroll area's full width
                                         ui.add_space(ui.available_width());
                                     });
