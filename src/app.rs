@@ -135,11 +135,21 @@ impl eframe::App for TemplateApp {
                     match self.shared_messages.lock() {
                         Ok(messages) => {
                             for i in messages.iter() {
-                                ui.horizontal(|ui| {
-                                    ui.label(format!("{}", i));
-                                    // This spacer pushes everything to the left, showing the scroll area's full width
-                                    ui.add_space(ui.available_width());
-                                });
+                                if i.starts_with("Message Received") {
+                                    ui.horizontal(|ui| {
+                                        ui.label(format!("{}", i));
+                                        // This spacer pushes everything to the left, showing the scroll area's full width
+                                        ui.add_space(ui.available_width());
+                                    });
+                                } else if i.starts_with("Message Sent") {
+                                    ui.horizontal(|ui| {
+                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Max), |ui| {
+                                            ui.label(format!("{}", i));
+                                        });
+                                        // This spacer pushes everything to the right, showing the scroll area's full width
+                                        ui.add_space(ui.available_width());
+                                    });
+                                }
                             }
                         }
                         Err(_) => {
