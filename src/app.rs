@@ -143,9 +143,12 @@ impl eframe::App for TemplateApp {
                                     });
                                 } else if i.starts_with("Message Sent") {
                                     ui.horizontal(|ui| {
-                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Max), |ui| {
-                                            ui.label(format!("{}", i));
-                                        });
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Max),
+                                            |ui| {
+                                                ui.label(format!("{}", i));
+                                            },
+                                        );
                                     });
                                 }
                             }
@@ -155,9 +158,7 @@ impl eframe::App for TemplateApp {
                         }
                     }
                 });
-                // Your code for the central panel goes here...
             });
-            // Create a scroll area that automatically takes up all available space
         });
         ctx.request_repaint()
     }

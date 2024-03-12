@@ -132,47 +132,58 @@ fn start_serial_read_thread(
 ) {
     thread::spawn(move || loop {
         let mut serial_buf: Vec<u8> = vec![0; 300];
+        let mut received_str = String::new();
 
         match ownable_serial_port.lock() {
             Ok(mut lock) => {
                 if let Some(port) = lock.as_mut() {
-                    match port.read(serial_buf.as_mut_slice()) {
-                        Ok(t) => {
-                            let received_str = String::from_utf8_lossy(&serial_buf[..t]);
-                            if let Some(start) = received_str.find("+RCV=") {
-                                match userid.lock() {
-                                    Ok(userid_lock) => {
-                                        if let Some(name) = userid_lock.as_ref() {
-                                            if received_str.contains(name) {
-                                                let data_parts: Vec<&str> =
-                                                    received_str[start..].split(',').collect();
-                                                if data_parts.len() > 2 {
-                                                    if data_parts[2].starts_with(name) {
-                                                        if let Ok(mut messages) =
-                                                            messages_for_thread.lock()
-                                                        {
-                                                            messages.push(format!(
-                                                                "Message Received: {}",
-                                                                data_parts[2].to_string()
-                                                            ));
-                                                        } else {
-                                                            eprintln!(
-                                                            "Failed to lock messages_for_thread"
-                                                        );
-                                                        }
-                                                    }
+                    loop {
+                        match port.read(serial_buf.as_mut_slice()) {
+                            Ok(t) => {
+                                received_str.push_str(&String::from_utf8_lossy(&serial_buf[..t]));
+                                if received_str.ends_with("\r\n") {
+                                    break;
+                                } else {
+                                    thread::sleep(Duration::from_millis(250));
+                                    continue;
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to read from serial port: {}", e);
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(start) = received_str.find("+RCV=") {
+                        match userid.lock() {
+                            Ok(userid_lock) => {
+                                if let Some(name) = userid_lock.as_ref() {
+                                    if received_str.contains(name) {
+                                        let data_parts: Vec<&str> =
+                                            received_str[start..].split(',').collect();
+                                        if data_parts.len() > 2 {
+                                            if data_parts[2].starts_with(name) {
+                                                if let Ok(mut messages) =
+                                                    messages_for_thread.lock()
+                                                {
+                                                    messages.push(format!(
+                                                        "Message Received: {}",
+                                                        data_parts[2].to_string()
+                                                    ));
+                                                } else {
+                                                    eprintln!(
+                                                        "Failed to lock messages_for_thread"
+                                                    );
                                                 }
                                             }
                                         }
                                     }
-                                    Err(e) => {
-                                        eprintln!("Failed to lock userid: {}", e);
-                                    }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to read from serial port: {}", e);
+                            Err(e) => {
+                                eprintln!("Failed to lock userid: {}", e);
+                            }
                         }
                     }
                 } else {
