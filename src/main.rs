@@ -131,7 +131,7 @@ fn start_serial_read_thread(
     userid: Arc<Mutex<Option<String>>>,
 ) {
     thread::spawn(move || loop {
-        let mut serial_buf: Vec<u8> = vec![0; 240];
+        let mut serial_buf: Vec<u8> = vec![0; 300];
 
         match ownable_serial_port.lock() {
             Ok(mut lock) => {
@@ -183,9 +183,10 @@ fn start_serial_read_thread(
                 eprintln!("Failed to lock ownable_serial_port: {}", e);
             }
         }
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(1000));
     });
 }
+
 fn get_username(ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>) -> Option<String> {
     let mut result: Option<String> = None;
     match ownable_serial_port.lock() {
@@ -222,6 +223,5 @@ fn get_username(ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>) ->
             eprintln!("Failed to lock ownable_serial_port: {}", e);
         }
     }
-    thread::sleep(Duration::from_millis(500));
     result
 }
