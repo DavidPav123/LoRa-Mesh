@@ -105,13 +105,12 @@ impl eframe::App for TemplateApp {
                     });
                     ui.add_space(16.0);
                 }
-
-                egui::widgets::global_dark_light_mode_buttons(ui);
             });
         });
 
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
+                ui.add_space(ui.available_size_before_wrap().x / 2.0 - 100.0); // Adjust the value as needed
                 ui.text_edit_singleline(&mut self.label);
                 if ui.button("Send").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     match self.shared_messages.lock() {
@@ -124,6 +123,7 @@ impl eframe::App for TemplateApp {
                         }
                     }
                 }
+                ui.add_space(ui.available_size_before_wrap().x / 2.0 - 100.0); // Adjust the value as needed
             });
         });
 
