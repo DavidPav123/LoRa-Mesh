@@ -72,57 +72,39 @@ fn main() {
 }
 
 fn open_serial_port() -> Option<Box<dyn SerialPort>> {
-    let mut port_name = String::new();
-
-    match available_ports() {
-        Ok(ports) => {
-            for i in ports.iter() {
-                println!("{:?}", i);
-            }
-            for p in ports {
-                match p.port_type {
-                    serialport::SerialPortType::UsbPort(usb_info) => {
-                        // Many Arduinos have a VID of 0x2341 and PIDs of 0x0042 or 0x0043
-                        if usb_info.vid == 0x2341
-                            && (usb_info.pid == 0x0042 || usb_info.pid == 0x0043)
-                        {
-                            port_name = p.port_name;
-                        }
+    let port_name = (|| -> Result<String, Box<dyn std::error::Error>> {
+        let ports = available_ports()?;
+        for p in ports {
+            match p.port_type {
+                serialport::SerialPortType::UsbPort(usb_info) => {
+                    // Many Arduinos have a VID of 0x2341 and PIDs of 0x0042 or 0x0043
+                    if usb_info.vid == 0x2341 && (usb_info.pid == 0x0042 || usb_info.pid == 0x0043)
+                    {
+                        return Ok(p.port_name);
                     }
-                    serialport::SerialPortType::PciPort => {
-                        eprintln!("Haven't implimented handling Pci Devices")
-                    }
-                    serialport::SerialPortType::BluetoothPort => {
-                        eprintln!("Haven't implimented handling Bluetooth Devices")
-                    }
-                    serialport::SerialPortType::Unknown => {
-                        eprintln!("Haven't implimented handling unknown devices")
-                    }
+                }
+                serialport::SerialPortType::PciPort => {
+                    eprintln!("Haven't implemented handling Pci Devices")
+                }
+                serialport::SerialPortType::BluetoothPort => {
+                    eprintln!("Haven't implemented handling Bluetooth Devices")
+                }
+                serialport::SerialPortType::Unknown => {
+                    eprintln!("Haven't implemented handling unknown devices")
                 }
             }
         }
-        Err(e) => {
-            eprintln!(
-                "Error occurred when attempting to read available serial ports: {:?}",
-                e
-            );
-        }
-    }
+        Err("No suitable port found".into())
+    })()
+    .ok()?;
 
-    if port_name.is_empty() {
-        return None;
-    }
-
-    match serialport::new(port_name, 9600)
+    serialport::new(port_name, 9600)
         .timeout(Duration::from_millis(10))
         .open()
-    {
-        Ok(p) => Some(p),
-        Err(e) => {
+        .map_err(|e| {
             eprintln!("Failed to open serial port: {}", e);
-            None
-        }
-    }
+        })
+        .ok()
 }
 
 fn start_serial_read_thread(
@@ -134,105 +116,69 @@ fn start_serial_read_thread(
         let mut serial_buf: Vec<u8> = vec![0; 300];
         let mut received_str = String::new();
 
-        match ownable_serial_port.lock() {
-            Ok(mut lock) => {
-                if let Some(port) = lock.as_mut() {
-                    loop {
-                        match port.read(serial_buf.as_mut_slice()) {
-                            Ok(t) => {
-                                received_str.push_str(&String::from_utf8_lossy(&serial_buf[..t]));
-                                if received_str.ends_with("\r\n") {
-                                    break;
-                                } else {
-                                    thread::sleep(Duration::from_millis(250));
-                                    continue;
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("Failed to read from serial port: {}", e);
-                                break;
-                            }
-                        }
+        let result: Result<(), Box<dyn std::error::Error>> = (|| {
+            let mut lock = ownable_serial_port.lock()?;
+            if let Some(port) = lock.as_mut() {
+                loop {
+                    let t = port.read(serial_buf.as_mut_slice())?;
+                    received_str.push_str(&String::from_utf8_lossy(&serial_buf[..t]));
+                    if received_str.ends_with("\r\n") {
+                        break;
+                    } else {
+                        thread::sleep(Duration::from_millis(25));
+                        continue;
                     }
-
-                    if let Some(start) = received_str.find("+RCV=") {
-                        match userid.lock() {
-                            Ok(userid_lock) => {
-                                if let Some(name) = userid_lock.as_ref() {
-                                    if received_str.contains(name) {
-                                        let data_parts: Vec<&str> =
-                                            received_str[start..].split(',').collect();
-                                        if data_parts.len() > 2 {
-                                            if data_parts[2].starts_with(name) {
-                                                if let Ok(mut messages) =
-                                                    messages_for_thread.lock()
-                                                {
-                                                    messages.push(format!(
-                                                        "Message Received: {}",
-                                                        data_parts[2].to_string()
-                                                    ));
-                                                } else {
-                                                    eprintln!(
-                                                        "Failed to lock messages_for_thread"
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("Failed to lock userid: {}", e);
-                            }
-                        }
-                    }
-                } else {
-                    eprintln!("Serial port is not available");
                 }
+
+                if let Some(start) = received_str.find("+RCV=") {
+                    let userid_lock = userid.lock()?;
+                    if let Some(name) = userid_lock.as_ref() {
+                        if received_str.contains(name) {
+                            let data_parts: Vec<&str> = received_str[start..].split(',').collect();
+                            if data_parts.len() > 2 {
+                                if data_parts[2].starts_with(name) {
+                                    let mut messages = messages_for_thread.lock()?;
+                                    messages.push(format!(
+                                        "Message Received: {}",
+                                        data_parts[2].to_string()
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                return Err("Serial port is not available".into());
             }
-            Err(e) => {
-                eprintln!("Failed to lock ownable_serial_port: {}", e);
-            }
+            Ok(())
+        })();
+
+        if let Err(_e) = result {
+            //eprintln!("Error: {}", e);
         }
-        thread::sleep(Duration::from_millis(1000));
+
+        thread::sleep(Duration::from_millis(25));
     });
 }
 
 fn get_username(ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>) -> Option<String> {
-    let mut result: Option<String> = None;
-    match ownable_serial_port.lock() {
-        Ok(mut lock) => {
-            if let Some(port) = lock.as_mut() {
-                //Wait for arduino startup
-                thread::sleep(Duration::from_millis(2000));
-                let mut serial_buf: Vec<u8> = vec![0; 240];
-                if let Err(_) = port.write(format!("AT+UID?\r\n").as_bytes()) {
-                    eprintln!("Error writing to port during get_username");
+    (|| -> Result<String, Box<dyn std::error::Error>> {
+        let mut lock = ownable_serial_port.lock()?;
+        if let Some(port) = lock.as_mut() {
+            thread::sleep(Duration::from_millis(2000));
+            let mut serial_buf: Vec<u8> = vec![0; 240];
+            port.write(format!("AT+UID?\r\n").as_bytes())?;
+            thread::sleep(Duration::from_millis(100));
+            let t = port.read(serial_buf.as_mut_slice())?;
+            let received_str = String::from_utf8_lossy(&serial_buf[..t]);
+            if let Some(start) = received_str.find("+UID=") {
+                let data_parts: Vec<&str> = received_str[start..].split('=').collect();
+                if data_parts.len() == 2 {
+                    return Ok(data_parts[1].trim().to_string());
                 }
-                //Wait for arduino to respond
-                thread::sleep(Duration::from_millis(100));
-
-                match port.read(serial_buf.as_mut_slice()) {
-                    Ok(t) => {
-                        let received_str = String::from_utf8_lossy(&serial_buf[..t]);
-                        if let Some(start) = received_str.find("+UID=") {
-                            let data_parts: Vec<&str> = received_str[start..].split('=').collect();
-                            if data_parts.len() == 2 {
-                                result = Some(data_parts[1].trim().to_string());
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to read from serial port: {}", e);
-                    }
-                }
-            } else {
-                eprintln!("Serial port is not available");
             }
         }
-        Err(e) => {
-            eprintln!("Failed to lock ownable_serial_port: {}", e);
-        }
-    }
-    result
+        Err("Serial port is not available".into())
+    })()
+    .ok()
 }
