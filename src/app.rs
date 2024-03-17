@@ -11,7 +11,6 @@ pub struct Message {
     pub confirmed: bool,
 }
 
-
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -24,7 +23,7 @@ pub struct TemplateApp {
     #[serde(skip)]
     port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
     #[serde(skip)]
-    userid: Arc<Mutex<Option<String>>>,
+    userid: Option<String>,
     #[serde(skip)]
     target_user: Arc<Mutex<Option<String>>>,
 }
@@ -35,7 +34,7 @@ impl Default for TemplateApp {
             label: String::new(),
             shared_messages: Arc::new(Mutex::new(HashMap::new())),
             port: Arc::new(Mutex::new(None)),
-            userid: Arc::new(Mutex::new(None)),
+            userid: None,
             target_user: Arc::new(Mutex::new(None)),
         }
     }
@@ -46,7 +45,7 @@ impl TemplateApp {
         cc: &eframe::CreationContext<'_>,
         shared_messages: Arc<Mutex<HashMap<String, Vec<Message>>>>,
         serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
-        userid: Arc<Mutex<Option<String>>>,
+        userid: Option<String>,
         target_user: Arc<Mutex<Option<String>>>,
     ) -> Self {
         if let Some(storage) = cc.storage {
@@ -66,15 +65,14 @@ impl TemplateApp {
     fn send_message(&self, input: &str) {
         let binding = self.target_user.lock().unwrap();
         let recipient = binding.as_ref().unwrap();
-        let binding = self.userid.lock().unwrap();
-        let sender = binding.as_ref().unwrap();
+        let sender = self.userid.as_ref().unwrap();
         let time_stamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs();
         let command = format!(
             "AT+SEND=0,{},{}{}{}{}\r\n",
-            input.trim().len() + 48,
+            input.trim().len() + 58,
             recipient,
             sender,
             time_stamp,
@@ -96,7 +94,7 @@ impl TemplateApp {
                             time: time_stamp,
                             confirmed: false,
                         });
-                        eprintln!("{:?}" , messages_vec);
+                        eprintln!("{:?}", messages_vec);
                     }
                 }
             }
@@ -154,17 +152,17 @@ impl eframe::App for TemplateApp {
                     match self.shared_messages.lock() {
                         Ok(messages) => {
                             let target_user = self.target_user.lock().unwrap();
-                            let target_messages = messages.get(target_user.as_ref().unwrap());
-                            match target_messages {
+                            let target_vec = messages.get(target_user.as_ref().unwrap());
+                            match target_vec {
                                 Some(target_messages) => {
                                     for i in target_messages {
-                                        if i.data.starts_with("Message Received") {
+                                        if i.sender != self.userid.clone().unwrap() {
                                             ui.horizontal(|ui| {
                                                 ui.label(format!("{}", i.data));
                                                 // This spacer pushes everything to the left, showing the scroll area's full width
                                                 ui.add_space(ui.available_width());
                                             });
-                                        } else if i.data.starts_with("Message Sent") {
+                                        } else {
                                             ui.horizontal(|ui| {
                                                 ui.with_layout(
                                                     egui::Layout::right_to_left(egui::Align::Max),

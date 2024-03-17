@@ -1,30 +1,35 @@
 #![warn(clippy::all, rust_2018_idioms)]
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] 
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 // hide console window on Windows in release
+use lora_mesh::app::Message;
 use serialport::{self, available_ports, SerialPort};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime};
-use lora_mesh::app::Message;
+use std::time::Duration;
 
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
     let serial_port = Arc::new(Mutex::new(open_serial_port()));
-    let shared_messages: Arc<Mutex<HashMap<String, Vec<Message>>>> = Arc::new(Mutex::new(HashMap::new()));
-    let userid = Arc::new(Mutex::new(get_username(serial_port.clone())));
+    let shared_messages: Arc<Mutex<HashMap<String, Vec<Message>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    let userid = get_username(serial_port.clone());
     let target_user = Arc::new(Mutex::new(std::option::Option::Some(
         "002E0051044A7EE1000026BF".to_string(),
     )));
 
-    if let Some(name) = userid.lock().unwrap().as_ref() {
+    if let Some(name) = userid.clone() {
         println!("{}", name);
     } else {
         println!("No userid found");
     }
 
-    start_serial_read_thread(serial_port.clone(), shared_messages.clone(), userid.clone());
+    start_serial_read_thread(
+        serial_port.clone(),
+        shared_messages.clone(),
+        userid.clone().unwrap(),
+    );
 
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
@@ -113,51 +118,76 @@ fn open_serial_port() -> Option<Box<dyn SerialPort>> {
 fn start_serial_read_thread(
     ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
     messages_for_thread: Arc<Mutex<HashMap<String, Vec<Message>>>>,
-    userid: Arc<Mutex<Option<String>>>,
+    userid: String,
 ) {
     thread::spawn(move || loop {
         let mut serial_buf: Vec<u8> = vec![0; 300];
         let mut received_str = String::new();
 
-        let result: Result<(), Box<dyn std::error::Error>> = (|| {
-            let mut lock = ownable_serial_port.lock()?;
-            if let Some(port) = lock.as_mut() {
-                loop {
-                    let t = port.read(serial_buf.as_mut_slice())?;
-                    received_str.push_str(&String::from_utf8_lossy(&serial_buf[..t]));
-                    if received_str.ends_with("\r\n") {
-                        break;
-                    } else {
-                        thread::sleep(Duration::from_millis(25));
-                        continue;
-                    }
-                }
-
-                if let Some(start) = received_str.find("+RCV=") {
-                    let userid_lock = userid.lock()?;
-                    if let Some(name) = userid_lock.as_ref() {
-                        if received_str.contains(name) {
-                            let data_parts: Vec<&str> = received_str[start..].split(',').collect();
-                            if data_parts.len() > 2 {
-                                /*if data_parts[2].starts_with(name) {
-                                    let mut messages = messages_for_thread.lock()?;
-                                    messages.push(format!(
-                                        "Message Received: {}",
-                                        data_parts[2].to_string()
-                                    ));
-                                }*/
+        match ownable_serial_port.lock() {
+            Ok(mut lock) => {
+                if let Some(port) = lock.as_mut() {
+                    loop {
+                        let t = port.read(&mut serial_buf);
+                        match t {
+                            Ok(count) => {
+                                received_str
+                                    .push_str(&String::from_utf8_lossy(&serial_buf[..count]));
+                                if received_str.ends_with("\r\n") {
+                                    break;
+                                } else {
+                                    thread::sleep(Duration::from_millis(25));
+                                    continue;
+                                }
+                            }
+                            Err(err) => {
+                                //eprintln!("Failed to read from serial port: {}", err);
+                                break;
                             }
                         }
                     }
-                }
-            } else {
-                return Err("Serial port is not available".into());
-            }
-            Ok(())
-        })();
 
-        if let Err(_e) = result {
-            //eprintln!("Error: {}", e);
+                    if let Some(start) = received_str.find("+RCV=") {
+                        if received_str.contains(&userid) {
+                            let data_parts: Vec<&str> = received_str[start..].split(',').collect();
+                            if let Ok(mut messages) = messages_for_thread.lock() {
+                                if received_str[4..14].contains("Confirmed") {
+                                    // Find the message using the senders address and mark the message as confirmed
+                                    if let Some(messages_vec) =
+                                        messages.get_mut(&data_parts[2][48..72].to_string())
+                                    {
+                                        for message in messages_vec.iter_mut() {
+                                            if message.time
+                                                == data_parts[2][14..24].parse().unwrap_or_default()
+                                            {
+                                                message.confirmed = true;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    messages
+                                        .entry(data_parts[2][24..48].to_string())
+                                        .or_insert_with(Vec::new)
+                                        .push(Message {
+                                            recipient: data_parts[2][..24].to_string(),
+                                            sender: data_parts[2][24..48].to_string(),
+                                            time: data_parts[2][48..58].parse().unwrap_or_default(),
+                                            data: data_parts[2][58..].to_string(),
+                                            confirmed: false,
+                                        });
+                                }
+                            }
+                        } else {
+                            // Send out the message
+                        }
+                    }
+                } else {
+                    //eprintln!("Serial port is not available");
+                }
+            }
+            Err(poisoned) => {
+                eprintln!("Mutex was poisoned. Inner error: {:?}", poisoned);
+            }
         }
 
         thread::sleep(Duration::from_millis(25));
