@@ -1,15 +1,18 @@
 #![warn(clippy::all, rust_2018_idioms)]
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] 
+// hide console window on Windows in release
 use serialport::{self, available_ports, SerialPort};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
+use lora_mesh::app::Message;
 
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
     let serial_port = Arc::new(Mutex::new(open_serial_port()));
-    let shared_messages = Arc::new(Mutex::new(Vec::new()));
+    let shared_messages: Arc<Mutex<HashMap<String, Vec<Message>>>> = Arc::new(Mutex::new(HashMap::new()));
     let userid = Arc::new(Mutex::new(get_username(serial_port.clone())));
     let target_user = Arc::new(Mutex::new(std::option::Option::Some(
         "002E0051044A7EE1000026BF".to_string(),
@@ -109,7 +112,7 @@ fn open_serial_port() -> Option<Box<dyn SerialPort>> {
 
 fn start_serial_read_thread(
     ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
-    messages_for_thread: Arc<Mutex<Vec<String>>>,
+    messages_for_thread: Arc<Mutex<HashMap<String, Vec<Message>>>>,
     userid: Arc<Mutex<Option<String>>>,
 ) {
     thread::spawn(move || loop {
@@ -136,13 +139,13 @@ fn start_serial_read_thread(
                         if received_str.contains(name) {
                             let data_parts: Vec<&str> = received_str[start..].split(',').collect();
                             if data_parts.len() > 2 {
-                                if data_parts[2].starts_with(name) {
+                                /*if data_parts[2].starts_with(name) {
                                     let mut messages = messages_for_thread.lock()?;
                                     messages.push(format!(
                                         "Message Received: {}",
                                         data_parts[2].to_string()
                                     ));
-                                }
+                                }*/
                             }
                         }
                     }
