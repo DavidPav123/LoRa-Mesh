@@ -151,14 +151,14 @@ fn start_serial_read_thread(
                         let data_parts: Vec<&str> = received_str[start..].split(',').collect();
                         if received_str.contains(&userid) {
                             if let Ok(mut messages) = messages_for_thread.lock() {
-                                if received_str[4..14].contains("CONFIRMED") {
+                                if data_parts[2][..9].contains("CONFIRMED") {
                                     // Find the message using the senders address and mark the message as confirmed
                                     if let Some(messages_vec) =
-                                        messages.get_mut(&data_parts[2][48..72].to_string())
+                                        messages.get_mut(&data_parts[2][42..66].to_string())
                                     {
                                         for message in messages_vec.iter_mut() {
                                             if message.time
-                                                == data_parts[2][14..24].parse().unwrap_or_default()
+                                                == data_parts[2][9..19].parse().unwrap_or_default()
                                             {
                                                 message.confirmed = true;
                                             }
