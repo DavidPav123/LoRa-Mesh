@@ -9,6 +9,7 @@ pub struct Message {
     pub data: String, // Message Contents
     pub time: u64,    // UNIX Epoch time
     pub confirmed: bool,
+    pub count: u64,
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -93,6 +94,7 @@ impl TemplateApp {
                             data: input.trim().to_string(),
                             time: time_stamp,
                             confirmed: false,
+                            count: 1,
                         });
                         eprintln!("{:?}", messages_vec);
                     }
@@ -150,12 +152,14 @@ impl eframe::App for TemplateApp {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     // Example long content to demonstrate scrolling
                     match self.shared_messages.lock() {
-                        Ok(messages) => {
+                        Ok(mut messages) => {
                             let target_user = self.target_user.lock().unwrap();
-                            let target_vec = messages.get(target_user.as_ref().unwrap());
+                            let target_user_ref = target_user.as_ref().unwrap();
+                            let target_vec = messages.get_mut(target_user_ref); // get mutable reference
                             match target_vec {
                                 Some(target_messages) => {
-                                    for i in target_messages {
+                                    for i in target_messages.iter_mut() {
+                                        // iterate over mutable references
                                         if i.sender != self.userid.clone().unwrap() {
                                             ui.horizontal(|ui| {
                                                 ui.label(format!("{}", i.data));
@@ -171,6 +175,45 @@ impl eframe::App for TemplateApp {
                                                     },
                                                 );
                                             });
+                                            if !i.confirmed
+                                                && i.count < 4
+                                                && i.time + (10 * i.count)
+                                                    < SystemTime::now()
+                                                        .duration_since(SystemTime::UNIX_EPOCH)
+                                                        .unwrap()
+                                                        .as_secs()
+                                            {
+                                                let command = format!(
+                                                    "AT+SEND=0,{},{}{}{}{}\r\n",
+                                                    (i.recipient.len()
+                                                        + i.sender.len()
+                                                        + i.time.to_string().len()
+                                                        + i.data.len()),
+                                                    i.recipient,
+                                                    i.sender,
+                                                    i.time,
+                                                    i.data
+                                                );
+                                                match self.port.lock() {
+                                                    Ok(mut port_option) => {
+                                                        if let Some(port) = port_option.as_mut() {
+                                                            match port.write(command.as_bytes()) {
+                                                                Ok(_) => {
+                                                                    i.count += 1;
+                                                                }
+                                                                Err(_) => {
+                                                                    eprintln!(
+                                                                        "Error writing to port"
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(_) => {
+                                                        println!("Error locking the port");
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -186,6 +229,7 @@ impl eframe::App for TemplateApp {
                 });
             });
         });
+
         ctx.request_repaint()
     }
 }

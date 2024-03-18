@@ -173,7 +173,8 @@ fn start_serial_read_thread(
                                             sender: data_parts[2][24..48].to_string(),
                                             time: data_parts[2][48..58].parse().unwrap_or_default(),
                                             data: data_parts[2][58..].to_string(),
-                                            confirmed: false,
+                                            confirmed: true,
+                                            count: 1,
                                         });
 
                                     send_message(
@@ -199,15 +200,17 @@ fn start_serial_read_thread(
                                     port,
                                 );
                             } else {
-                                send_message(
-                                    "SEND".to_string(),
-                                    data_parts[1].parse().unwrap(),
-                                    data_parts[2][..24].to_string(),
-                                    data_parts[2][24..48].to_string(),
-                                    data_parts[2][48..58].to_string(),
-                                    data_parts[2][58..].to_string(),
-                                    port,
-                                );
+                                if received_str.len() > 58 {
+                                    send_message(
+                                        "SEND".to_string(),
+                                        data_parts[1].parse().unwrap(),
+                                        data_parts[2][..24].to_string(),
+                                        data_parts[2][24..48].to_string(),
+                                        data_parts[2][48..58].to_string(),
+                                        data_parts[2][58..].to_string(),
+                                        port,
+                                    );
+                                }
                             }
                         }
                     }
@@ -259,10 +262,7 @@ fn send_message(
     if command_type == "CONFIRMED" {
         command = format!(
             "AT+SEND=0,{},CONFIRMED{}{}{}\r\n",
-            input_len,
-            time_stamp,
-            recipient,
-            sender
+            input_len, time_stamp, recipient, sender
         );
     } else if command_type == "SEND" {
         command = format!(
