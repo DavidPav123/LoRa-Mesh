@@ -154,7 +154,7 @@ fn start_serial_read_thread(
                                 if data_parts[2][..9].contains("CONFIRMED") {
                                     // Find the message using the senders address and mark the message as confirmed
                                     if let Some(messages_vec) =
-                                        messages.get_mut(&data_parts[2][42..66].to_string())
+                                        messages.get_mut(&data_parts[2][43..67].to_string())
                                     {
                                         for message in messages_vec.iter_mut() {
                                             if message.time
