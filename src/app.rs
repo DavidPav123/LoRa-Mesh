@@ -78,7 +78,6 @@ impl TemplateApp {
             time_stamp,
             input.trim()
         );
-        eprintln!("{}", command);
 
         match self.port.lock() {
             Ok(mut port_option) => {

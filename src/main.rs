@@ -148,10 +148,10 @@ fn start_serial_read_thread(
                     }
 
                     if let Some(start) = received_str.find("+RCV=") {
+                        let data_parts: Vec<&str> = received_str[start..].split(',').collect();
                         if received_str.contains(&userid) {
-                            let data_parts: Vec<&str> = received_str[start..].split(',').collect();
                             if let Ok(mut messages) = messages_for_thread.lock() {
-                                if received_str[4..14].contains("Confirmed") {
+                                if received_str[4..14].contains("CONFIRMED") {
                                     // Find the message using the senders address and mark the message as confirmed
                                     if let Some(messages_vec) =
                                         messages.get_mut(&data_parts[2][48..72].to_string())
@@ -175,10 +175,40 @@ fn start_serial_read_thread(
                                             data: data_parts[2][58..].to_string(),
                                             confirmed: false,
                                         });
+
+                                    send_message(
+                                        "CONFIRMED".to_string(),
+                                        67,
+                                        data_parts[2][24..48].to_string(),
+                                        data_parts[2][..24].to_string(),
+                                        data_parts[2][48..58].to_string(),
+                                        "".to_string(),
+                                        port,
+                                    );
                                 }
                             }
                         } else {
-                            // Send out the message
+                            if received_str[4..14].contains("CONFIRMED") {
+                                send_message(
+                                    "CONFIRMED".to_string(),
+                                    data_parts[1].parse().unwrap(),
+                                    data_parts[2][24..48].to_string(),
+                                    data_parts[2][48..72].to_string(),
+                                    data_parts[2][14..24].to_string(),
+                                    "".to_string(),
+                                    port,
+                                );
+                            } else {
+                                send_message(
+                                    "SEND".to_string(),
+                                    data_parts[1].parse().unwrap(),
+                                    data_parts[2][..24].to_string(),
+                                    data_parts[2][24..48].to_string(),
+                                    data_parts[2][48..58].to_string(),
+                                    data_parts[2][58..].to_string(),
+                                    port,
+                                );
+                            }
                         }
                     }
                 } else {
@@ -214,4 +244,41 @@ fn get_username(ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>) ->
         Err("Serial port is not available".into())
     })()
     .ok()
+}
+
+fn send_message(
+    command_type: String,
+    input_len: i32,
+    recipient: String,
+    sender: String,
+    time_stamp: String,
+    input: String,
+    serial_port: &mut Box<dyn SerialPort>,
+) {
+    let command: String;
+    if command_type == "CONFIRMED" {
+        command = format!(
+            "AT+SEND=0,{},CONFIRMED{}{}{}\r\n",
+            input_len,
+            time_stamp,
+            recipient,
+            sender
+        );
+    } else if command_type == "SEND" {
+        command = format!(
+            "AT+SEND=0,{},{}{}{}{}\r\n",
+            input.trim().len() + 58,
+            recipient,
+            sender,
+            time_stamp,
+            input.trim()
+        );
+    } else {
+        eprintln!("Invalid command type");
+        return;
+    }
+    eprintln!("{}", command);
+    if let Err(_) = serial_port.write(command.as_bytes()) {
+        eprintln!("Error writing to port");
+    }
 }
