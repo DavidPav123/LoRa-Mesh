@@ -6,7 +6,7 @@ use serialport::{self, available_ports, SerialPort};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
@@ -130,6 +130,7 @@ fn start_serial_read_thread(
         match ownable_serial_port.lock() {
             Ok(mut lock) => {
                 if let Some(port) = lock.as_mut() {
+                    let start_time = Instant::now();
                     loop {
                         let t = port.read(&mut serial_buf);
                         match t {
@@ -137,6 +138,9 @@ fn start_serial_read_thread(
                                 received_str
                                     .push_str(&String::from_utf8_lossy(&serial_buf[..count]));
                                 if received_str.ends_with("\r\n") {
+                                    break;
+                                } else if start_time.elapsed() > Duration::from_millis(500) {
+                                    // If more than 500ms has passed, break the loop
                                     break;
                                 } else {
                                     thread::sleep(Duration::from_millis(25));
