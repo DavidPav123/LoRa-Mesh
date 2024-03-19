@@ -6,7 +6,7 @@ use serialport::{self, available_ports, SerialPort};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
@@ -18,6 +18,7 @@ fn main() -> eframe::Result<()> {
     let target_user = Arc::new(Mutex::new(std::option::Option::Some(
         "002E0051044A7EE1000026BF".to_string(),
     )));
+    let seen_messages: Arc<Mutex<Vec<(String, u64)>>> = Arc::new(Mutex::new(Vec::new()));
 
     if let Some(name) = userid.clone() {
         println!("{}", name);
@@ -29,6 +30,7 @@ fn main() -> eframe::Result<()> {
         serial_port.clone(),
         shared_messages.clone(),
         userid.clone().unwrap(),
+        seen_messages.clone(),
     );
 
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
@@ -119,6 +121,7 @@ fn start_serial_read_thread(
     ownable_serial_port: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
     messages_for_thread: Arc<Mutex<HashMap<String, Vec<Message>>>>,
     userid: String,
+    ownable_seen_messages: Arc<Mutex<Vec<(String, u64)>>>,
 ) {
     thread::spawn(move || loop {
         let mut serial_buf: Vec<u8> = vec![0; 300];
@@ -145,75 +148,118 @@ fn start_serial_read_thread(
                             }
                         }
                     }
+                    match ownable_seen_messages.lock() {
+                        Ok(mut seen_messages) => {
+                            if !seen_messages.contains(&(received_str.clone(), 0)) {
+                                if let Some(start) = received_str.find("+RCV=") {
+                                    let data_parts: Vec<&str> =
+                                        received_str[start..].split(',').collect();
 
-                    if let Some(start) = received_str.find("+RCV=") {
-                        let data_parts: Vec<&str> = received_str[start..].split(',').collect();
-                        if received_str.contains(&userid) {
-                            if let Ok(mut messages) = messages_for_thread.lock() {
-                                if data_parts[2][..9].contains("CONFIRMED") {
-                                    // Find the message using the senders address and mark the message as confirmed
-                                    if let Some(messages_vec) =
-                                        messages.get_mut(&data_parts[2][43..67].to_string())
-                                    {
-                                        for message in messages_vec.iter_mut() {
-                                            if message.time
-                                                == data_parts[2][9..19].parse().unwrap_or_default()
-                                            {
-                                                message.confirmed = true;
+                                    if data_parts[2][..9].contains("CONFIRMED") {
+                                        seen_messages.push((
+                                            received_str.clone(),
+                                            data_parts[2][9..19].parse().unwrap_or_default(),
+                                        ));
+                                    } else {
+                                        seen_messages.push((
+                                            received_str.clone(),
+                                            data_parts[2][48..58].parse().unwrap_or_default(),
+                                        ));
+                                    }
+
+                                    if received_str.contains(&userid) {
+                                        if let Ok(mut messages) = messages_for_thread.lock() {
+                                            if data_parts[2][..9].contains("CONFIRMED") {
+                                                // Find the message using the senders address and mark the message as confirmed
+                                                if let Some(messages_vec) = messages
+                                                    .get_mut(&data_parts[2][43..67].to_string())
+                                                {
+                                                    for message in messages_vec.iter_mut() {
+                                                        if message.time
+                                                            == data_parts[2][9..19]
+                                                                .parse()
+                                                                .unwrap_or_default()
+                                                        {
+                                                            message.confirmed = true;
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                messages
+                                                    .entry(data_parts[2][24..48].to_string())
+                                                    .or_insert_with(Vec::new)
+                                                    .push(Message {
+                                                        recipient: data_parts[2][..24].to_string(),
+                                                        sender: data_parts[2][24..48].to_string(),
+                                                        time: data_parts[2][48..58]
+                                                            .parse()
+                                                            .unwrap_or_default(),
+                                                        data: data_parts[2][58..].to_string(),
+                                                        confirmed: true,
+                                                        count: 1,
+                                                    });
+
+                                                send_message(
+                                                    "CONFIRMED".to_string(),
+                                                    67,
+                                                    data_parts[2][24..48].to_string(),
+                                                    data_parts[2][..24].to_string(),
+                                                    data_parts[2][48..58].to_string(),
+                                                    "".to_string(),
+                                                    port,
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        if received_str[4..14].contains("CONFIRMED") {
+                                            send_message(
+                                                "CONFIRMED".to_string(),
+                                                data_parts[1].parse().unwrap(),
+                                                data_parts[2][24..48].to_string(),
+                                                data_parts[2][48..72].to_string(),
+                                                data_parts[2][14..24].to_string(),
+                                                "".to_string(),
+                                                port,
+                                            );
+                                        } else {
+                                            if received_str.len() > 58 {
+                                                send_message(
+                                                    "SEND".to_string(),
+                                                    data_parts[1].parse().unwrap(),
+                                                    data_parts[2][..24].to_string(),
+                                                    data_parts[2][24..48].to_string(),
+                                                    data_parts[2][48..58].to_string(),
+                                                    data_parts[2][58..].to_string(),
+                                                    port,
+                                                );
                                             }
                                         }
                                     }
-                                } else {
-                                    messages
-                                        .entry(data_parts[2][24..48].to_string())
-                                        .or_insert_with(Vec::new)
-                                        .push(Message {
-                                            recipient: data_parts[2][..24].to_string(),
-                                            sender: data_parts[2][24..48].to_string(),
-                                            time: data_parts[2][48..58].parse().unwrap_or_default(),
-                                            data: data_parts[2][58..].to_string(),
-                                            confirmed: true,
-                                            count: 1,
-                                        });
+                                }
+                            }
+                            let mut to_remove = Vec::new();
 
-                                    send_message(
-                                        "CONFIRMED".to_string(),
-                                        67,
-                                        data_parts[2][24..48].to_string(),
-                                        data_parts[2][..24].to_string(),
-                                        data_parts[2][48..58].to_string(),
-                                        "".to_string(),
-                                        port,
-                                    );
+                            for (index, message) in seen_messages.iter().enumerate() {
+                                if SystemTime::now()
+                                    .duration_since(SystemTime::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs()
+                                    > message.1 + 5
+                                {
+                                    to_remove.push(index);
                                 }
                             }
-                        } else {
-                            if received_str[4..14].contains("CONFIRMED") {
-                                send_message(
-                                    "CONFIRMED".to_string(),
-                                    data_parts[1].parse().unwrap(),
-                                    data_parts[2][24..48].to_string(),
-                                    data_parts[2][48..72].to_string(),
-                                    data_parts[2][14..24].to_string(),
-                                    "".to_string(),
-                                    port,
-                                );
-                            } else {
-                                if received_str.len() > 58 {
-                                    send_message(
-                                        "SEND".to_string(),
-                                        data_parts[1].parse().unwrap(),
-                                        data_parts[2][..24].to_string(),
-                                        data_parts[2][24..48].to_string(),
-                                        data_parts[2][48..58].to_string(),
-                                        data_parts[2][58..].to_string(),
-                                        port,
-                                    );
-                                }
+
+                            for index in to_remove.iter().rev() {
+                                seen_messages.remove(*index);
                             }
+                        }
+                        Err(poisoned) => {
+                            eprintln!("Mutex was poisoned. Inner error: {:?}", poisoned);
                         }
                     }
                 } else {
+                    //Don't print because it will spam the console
                     //eprintln!("Serial port is not available");
                 }
             }
