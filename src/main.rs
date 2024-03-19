@@ -150,23 +150,31 @@ fn start_serial_read_thread(
                     }
                     match ownable_seen_messages.lock() {
                         Ok(mut seen_messages) => {
-                            if !seen_messages.contains(&(received_str.clone(), 0)) {
-                                if let Some(start) = received_str.find("+RCV=") {
-                                    let data_parts: Vec<&str> =
-                                        received_str[start..].split(',').collect();
-
+                            if let Some(start) = received_str.find("+RCV=") {
+                                let data_parts: Vec<&str> =
+                                    received_str[start..].split(',').collect();
+                                if !(seen_messages.contains(&(
+                                    data_parts[0].to_string() + data_parts[1] + data_parts[2],
+                                    data_parts[2][9..19].parse().unwrap_or_default(),
+                                )) || seen_messages.contains(&(
+                                    data_parts[0].to_string() + data_parts[1] + data_parts[2],
+                                    data_parts[2][48..58].parse().unwrap_or_default(),
+                                ))) {
                                     if data_parts[2][..9].contains("CONFIRMED") {
                                         seen_messages.push((
-                                            received_str.clone(),
+                                            data_parts[0].to_string()
+                                                + data_parts[1]
+                                                + data_parts[2],
                                             data_parts[2][9..19].parse().unwrap_or_default(),
                                         ));
                                     } else {
                                         seen_messages.push((
-                                            received_str.clone(),
+                                            data_parts[0].to_string()
+                                                + data_parts[1]
+                                                + data_parts[2],
                                             data_parts[2][48..58].parse().unwrap_or_default(),
                                         ));
                                     }
-
                                     if received_str.contains(&userid) {
                                         if let Ok(mut messages) = messages_for_thread.lock() {
                                             if data_parts[2][..9].contains("CONFIRMED") {
