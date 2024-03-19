@@ -140,8 +140,7 @@ fn start_serial_read_thread(
                                     continue;
                                 }
                             }
-                            Err(err) => {
-                                //eprintln!("Failed to read from serial port: {}", err);
+                            Err(_err) => {
                                 break;
                             }
                         }
@@ -277,7 +276,6 @@ fn send_message(
         eprintln!("Invalid command type");
         return;
     }
-    eprintln!("{}", command);
     if let Err(_) = serial_port.write(command.as_bytes()) {
         eprintln!("Error writing to port");
     }

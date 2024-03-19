@@ -96,7 +96,6 @@ impl TemplateApp {
                             confirmed: false,
                             count: 1,
                         });
-                        eprintln!("{:?}", messages_vec);
                     }
                 }
             }
